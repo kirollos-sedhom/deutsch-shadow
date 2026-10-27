@@ -40,11 +40,14 @@ class GermanSegmenter:
     def segment(
         self,
         transcription_or_words: TranscriptionResult | List[Word],
+        media_duration_s: Optional[float] = None,
     ) -> List[PracticeSegment]:
         """Split recognized words into natural German shadowing segments.
 
         Args:
             transcription_or_words: TranscriptionResult or list of Word objects.
+            media_duration_s: Total duration of the source recording in seconds,
+                used to safely clamp trailing segment boundaries.
 
         Returns:
             List of PracticeSegment objects with millisecond timestamps and word arrays.
@@ -68,6 +71,7 @@ class GermanSegmenter:
         # Convert word chunks into PracticeSegments with boundary padding
         practice_segments: List[PracticeSegment] = []
         last_end_ms = 0
+        max_allowed_ms = int(round(self.config.max_duration_s * 1000))
 
         for seq_idx, chunk in enumerate(word_chunks):
             if not chunk:
@@ -87,14 +91,40 @@ class GermanSegmenter:
             padded_start_ms = max(0, raw_start_ms - lead_in_ms)
             padded_end_ms = raw_end_ms + tail_out_ms
 
+            # Clamp trailing boundary to media duration if provided
+            if media_duration_s is not None and media_duration_s > 0:
+                media_end_ms = int(round(media_duration_s * 1000))
+                padded_end_ms = min(padded_end_ms, media_end_ms)
+
             # Prevent overlap with previous segment
             if padded_start_ms < last_end_ms:
-                # If padding overlaps, clamp to previous end or raw start
                 padded_start_ms = max(last_end_ms, raw_start_ms)
 
             # Ensure start < end
             if padded_end_ms <= padded_start_ms:
                 padded_end_ms = padded_start_ms + max(100, last_word.duration_ms)
+                if media_duration_s is not None and media_duration_s > 0:
+                    media_end_ms = int(round(media_duration_s * 1000))
+                    padded_end_ms = min(padded_end_ms, media_end_ms)
+                    padded_start_ms = min(padded_start_ms, max(0, padded_end_ms - 100))
+
+            # Strictly enforce the playable maximum duration limit
+            seg_duration_ms = padded_end_ms - padded_start_ms
+            if seg_duration_ms > max_allowed_ms:
+                excess_ms = seg_duration_ms - max_allowed_ms
+                # Trim excess from tail padding first
+                if padded_end_ms > raw_end_ms:
+                    tail_trim = min(excess_ms, padded_end_ms - raw_end_ms)
+                    padded_end_ms -= tail_trim
+                    excess_ms -= tail_trim
+                # Trim excess from lead-in padding next
+                if excess_ms > 0 and padded_start_ms < raw_start_ms:
+                    lead_trim = min(excess_ms, raw_start_ms - padded_start_ms)
+                    padded_start_ms += lead_trim
+                    excess_ms -= lead_trim
+                # Hard clamp if still over
+                if padded_end_ms - padded_start_ms > max_allowed_ms:
+                    padded_end_ms = padded_start_ms + max_allowed_ms
 
             # Reconstruct clean text representation
             text = " ".join(w.word for w in chunk).strip()
@@ -105,6 +135,7 @@ class GermanSegmenter:
                 start_ms=padded_start_ms,
                 end_ms=padded_end_ms,
                 text=text,
+                duration_ms=padded_end_ms - padded_start_ms,
                 words=chunk,
             )
             practice_segments.append(segment)
@@ -152,6 +183,8 @@ class GermanSegmenter:
         current_chunk: List[Word] = []
 
         total_words = len(words)
+        total_padding_s = self.config.lead_in_padding_s + self.config.tail_out_padding_s
+        max_speech_s = max(self.config.min_duration_s, self.config.max_duration_s - total_padding_s)
 
         for i, word in enumerate(words):
             current_chunk.append(word)
@@ -166,16 +199,15 @@ class GermanSegmenter:
             chunk_start_s = current_chunk[0].start_s
             chunk_duration = round(word.end_s - chunk_start_s, 3)
             pause_after = round(max(0.0, next_word.start_s - word.end_s), 3)
+            projected_dur_with_next = round(next_word.end_s - chunk_start_s, 3)
 
             should_split = False
 
             # Check 1: Terminal German sentence punctuation (. ! ?)
             is_terminal = bool(TERMINAL_PUNCTUATION.search(word.word))
             if is_terminal and not self._is_abbreviation(word.word):
-                # If duration meets minimum requirement, split immediately
                 if chunk_duration >= self.config.min_duration_s:
                     should_split = True
-                # If pause after terminal punctuation is noticeable, split even if slightly shorter
                 elif pause_after >= 0.2:
                     should_split = True
 
@@ -190,9 +222,10 @@ class GermanSegmenter:
                 if is_clause or pause_after >= 0.25:
                     should_split = True
 
-            # Check 4: Hard overflow protection (chunk exceeds max_duration_s)
-            if not should_split and chunk_duration >= self.config.max_duration_s:
-                should_split = True
+            # Check 4: Hard overflow protection (adding next word would exceed max speech duration)
+            if not should_split and chunk_duration >= self.config.min_duration_s:
+                if projected_dur_with_next > max_speech_s:
+                    should_split = True
 
             if should_split:
                 chunks.append(current_chunk)
@@ -200,10 +233,14 @@ class GermanSegmenter:
 
         if current_chunk:
             # If the final trailing chunk is extremely short (< min_duration) and we have prior chunks,
-            # merge it into the previous chunk to avoid awkward 1-word orphan segments.
+            # only merge into the previous chunk if the combined duration does not exceed max_speech_s.
             chunk_dur = round(current_chunk[-1].end_s - current_chunk[0].start_s, 3)
             if chunks and chunk_dur < self.config.min_duration_s:
-                chunks[-1].extend(current_chunk)
+                combined_dur = round(current_chunk[-1].end_s - chunks[-1][0].start_s, 3)
+                if combined_dur <= max_speech_s:
+                    chunks[-1].extend(current_chunk)
+                else:
+                    chunks.append(current_chunk)
             else:
                 chunks.append(current_chunk)
 

@@ -113,7 +113,9 @@ Whisper raw segments are often either too long (entire paragraphs) or arbitraril
    - Add $+80\text{ms}$ lead-in padding to preserve initial plosives and glottal stops (*Knacklaute*).
    - Add $+80\text{ms}$ tail-out padding to avoid truncating unstressed German endings (e.g. *-en*, *-er*, *-t*).
    - Enforce strictly non-overlapping boundaries (`padded_start_ms >= last_end_ms`).
-   - Merge orphan trailing fragments shorter than `min_duration_s` into previous segment.
+   - Strictly enforce playable duration limit: final playable duration (`end_ms - start_ms`) cannot exceed `max_duration_s` ($7,000\text{ms}$). If raw speech and padding together exceed this ceiling, excess padding is trimmed and chunks split prior to overflow.
+   - Clamp final playable segment end boundary to exact media duration (`end_ms <= media_duration_ms`).
+   - Merge orphan trailing fragments shorter than `min_duration_s` into previous segment only if the combined duration remains within limits.
 
 ---
 

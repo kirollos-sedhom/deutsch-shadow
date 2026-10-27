@@ -76,7 +76,10 @@ class AudioPipeline:
         transcription = self.transcriber.transcribe(working_wav)
 
         # Step 3: Segment transcribed speech into natural practice units
-        practice_segments = self.segmenter.segment(transcription)
+        practice_segments = self.segmenter.segment(
+            transcription,
+            media_duration_s=metadata.duration_s,
+        )
 
         # Step 4: Assemble pipeline result
         result = PipelineResult(

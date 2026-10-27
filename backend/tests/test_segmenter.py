@@ -203,6 +203,46 @@ class TestGermanSegmenter(unittest.TestCase):
         self.assertEqual(segments[0].text, "„Hallo!“")
         self.assertEqual(segments[1].text, "sagte der Mann.")
 
+    def test_strict_playable_duration_limit(self):
+        """Playable segment durations must never exceed max_duration_s (including padding)."""
+        # Continuous speech run of 15 seconds without punctuation
+        words = []
+        for i in range(30):
+            start = i * 0.50
+            end = start + 0.45
+            words.append(Word(f"Wort{i+1}", start, end))
+
+        segments = self.segmenter.segment(words)
+        max_allowed_ms = int(round(self.config.max_duration_s * 1000))
+
+        self.assertGreater(len(segments), 2)
+        for s in segments:
+            self.assertLessEqual(
+                s.duration_ms,
+                max_allowed_ms,
+                f"Segment {s.sequence_index} duration {s.duration_ms}ms exceeds max limit {max_allowed_ms}ms",
+            )
+            self.assertEqual(s.duration_ms, s.end_ms - s.start_ms)
+
+    def test_clamp_to_media_duration(self):
+        """Segment boundaries must not exceed the specified media duration."""
+        # Speech ending at 9.95s in a 10.00s file (80ms tail padding would reach 10.03s without clamp)
+        words = [
+            Word("Das", 8.0, 8.4),
+            Word("ist", 8.5, 8.8),
+            Word("das", 8.9, 9.2),
+            Word("Ende.", 9.3, 9.95),
+        ]
+
+        # Call with media_duration_s = 10.0s (10000ms)
+        segments = self.segmenter.segment(words, media_duration_s=10.0)
+        self.assertEqual(len(segments), 1)
+
+        seg = segments[0]
+        self.assertLessEqual(seg.end_ms, 10000, f"Segment end {seg.end_ms}ms exceeds media duration 10000ms")
+        self.assertGreaterEqual(seg.start_ms, 0)
+        self.assertLess(seg.start_ms, seg.end_ms)
+
 
 if __name__ == "__main__":
     unittest.main()

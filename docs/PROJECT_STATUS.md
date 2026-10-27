@@ -50,18 +50,19 @@
    - *Confirmed Configuration:* CPU inference with `faster-whisper`, `compute_type="int8"`, and 4 to 6 worker threads. This leverages the Ryzen 5 2600's 12 threads efficiently while leaving headroom for system responsiveness.
 4. **Automated Test Results (Milestone 2 Verified):**
    - **20/20 tests passing** in `backend/tests/` using `.venv` Python.
-5. **Real-Audio Integration Test Results (Verified):**
-   - **Input Recording:** `data/sample.mp4` (54.29s, AAC stereo 44.1kHz, with video).
+5. **Real-Audio Integration Test Results (Final Audit Verified):**
+   - **Input Recording:** `data/sample.mp4` (54.288s, AAC stereo 44.1kHz, with video).
    - **Status:** **PASSED** (Exit code `0`).
    - **Model Configuration:** `faster-whisper-base`, CPU inference, `int8` quantization, 4 worker threads.
-   - **Inference Runtime:** 25.91 seconds (sub-realtime on AMD Ryzen 5 2600).
+   - **Inference Runtime:** 30.07 seconds.
    - **Speech Recognition:** Language detected as German (`de`, $p=1.00$), 141 total words recognized.
-   - **Segmentation Results:** Generated 11 clean practice segments (average duration ~4.9s).
-   - **Integrity Checks:** Verified that all start and end timestamps are ordered, non-overlapping, bounded within the recording, and that `sample.mp4` remained unmodified.
-   - **Fixes Applied During Verification:**
-     - Pinned `av<18` in `requirements.txt` to prevent PyAV 19 `metadata_errors` incompatibility in `faster-whisper`.
-     - Reconfigured UTF-8 console output in `cli.py` to prevent Windows `cp1252` encoding errors.
-     - Added serialized `duration_ms` field to `PracticeSegment` dataclass.
+   - **Segmentation Results:** Generated 13 practice segments.
+   - **Final Audit Fixes & Verification:**
+     - **Strict Duration Limit:** Enforced `max_duration_s = 7.0s` on the final playable segment (including acoustic padding). All 13 segments strictly obey $\text{duration\_ms} \le 7000\text{ms}$ (longest segment: 6,940ms).
+     - **Media Boundary Clamping:** Clamped trailing segment end to exact media duration ($54,288\text{ms}$). Segment 13 ends at exactly $54,288\text{ms}$, preventing boundary overshoot.
+     - **Non-Overlapping Integrity:** Verified $\text{start\_ms}_{k} \ge \text{end\_ms}_{k-1}$ for all segments.
+     - **Manifest Validation Audit:** Validated via `scripts/verify_manifest.py` with 0 errors and 0 warnings (Exit code `0`).
+     - **Automated Regression Suite:** 22/22 unit and integration tests passing (`backend/tests/`).
 
 ---
 
