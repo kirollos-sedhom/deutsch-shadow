@@ -49,13 +49,19 @@
 3. **Hardware Acceleration & Compute Type:**
    - *Confirmed Configuration:* CPU inference with `faster-whisper`, `compute_type="int8"`, and 4 to 6 worker threads. This leverages the Ryzen 5 2600's 12 threads efficiently while leaving headroom for system responsiveness.
 4. **Automated Test Results (Milestone 2 Verified):**
-   - **20/20 tests passing** in `backend/tests/` using `.venv` Python:
-     - 4 tests for CLI argument parsing, file/directory checks, thread validation, and duration sanity in `test_cli.py`.
-     - 9 tests for German syntax, abbreviations, clause splitting, pause splitting, and overflow protection in `test_segmenter.py`.
-     - 3 tests for FFprobe audio metadata inspection in `test_media_probe.py`.
-     - 1 test for FFmpeg 16kHz mono normalization and master preservation in `test_media_converter.py`.
-     - 2 tests for transcriber error handling and dependency reporting in `test_transcriber_mock.py`.
-     - 1 end-to-end integration test verifying `manifest.json` generation in `test_pipeline_e2e.py`.
+   - **20/20 tests passing** in `backend/tests/` using `.venv` Python.
+5. **Real-Audio Integration Test Results (Verified):**
+   - **Input Recording:** `data/sample.mp4` (54.29s, AAC stereo 44.1kHz, with video).
+   - **Status:** **PASSED** (Exit code `0`).
+   - **Model Configuration:** `faster-whisper-base`, CPU inference, `int8` quantization, 4 worker threads.
+   - **Inference Runtime:** 25.91 seconds (sub-realtime on AMD Ryzen 5 2600).
+   - **Speech Recognition:** Language detected as German (`de`, $p=1.00$), 141 total words recognized.
+   - **Segmentation Results:** Generated 11 clean practice segments (average duration ~4.9s).
+   - **Integrity Checks:** Verified that all start and end timestamps are ordered, non-overlapping, bounded within the recording, and that `sample.mp4` remained unmodified.
+   - **Fixes Applied During Verification:**
+     - Pinned `av<18` in `requirements.txt` to prevent PyAV 19 `metadata_errors` incompatibility in `faster-whisper`.
+     - Reconfigured UTF-8 console output in `cli.py` to prevent Windows `cp1252` encoding errors.
+     - Added serialized `duration_ms` field to `PracticeSegment` dataclass.
 
 ---
 

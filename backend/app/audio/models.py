@@ -81,11 +81,12 @@ class PracticeSegment:
     start_ms: int
     end_ms: int
     text: str
+    duration_ms: int = 0
     words: List[Word] = field(default_factory=list)
 
-    @property
-    def duration_ms(self) -> int:
-        return max(0, self.end_ms - self.start_ms)
+    def __post_init__(self):
+        if not self.duration_ms:
+            self.duration_ms = max(0, self.end_ms - self.start_ms)
 
     @property
     def start_s(self) -> float:

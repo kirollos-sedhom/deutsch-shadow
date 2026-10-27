@@ -72,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(args: list[str] | None = None) -> int:
     """Execute CLI processing command."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     parser = build_parser()
     parsed = parser.parse_args(args)
 
@@ -162,7 +167,7 @@ def main(args: list[str] | None = None) -> int:
 
     manifest_path = Path(parsed.output_dir) / "manifest.json"
     print("-----------------------------------------------------------------")
-    print(f"✓ Manifest saved: {manifest_path.resolve()}")
+    print(f"[OK] Manifest saved: {manifest_path.resolve()}")
     print("=================================================================")
     return 0
 
