@@ -21,14 +21,12 @@ class TestAudioTranscriber(unittest.TestCase):
 
     def test_dependency_error_message(self):
         """If faster-whisper is not installed, error message must contain pip install instructions."""
+        from unittest.mock import patch
         transcriber = AudioTranscriber(WhisperConfig(model_size="base"))
-        try:
-            transcriber._load_model()
-        except TranscriberDependencyError as err:
-            self.assertIn("pip install faster-whisper", str(err))
-        except Exception:
-            # If faster-whisper happens to be installed in the environment, loading might succeed or fail on weights
-            pass
+        with patch.dict("sys.modules", {"faster_whisper": None}):
+            with self.assertRaises(TranscriberDependencyError) as ctx:
+                transcriber._load_model()
+            self.assertIn("pip install faster-whisper", str(ctx.exception))
 
 
 if __name__ == "__main__":

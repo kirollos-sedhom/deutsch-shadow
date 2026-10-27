@@ -79,6 +79,21 @@ def main(args: list[str] | None = None) -> int:
     if not media_path.exists():
         print(f"[ERROR] Specified media file does not exist: {media_path}", file=sys.stderr)
         return 1
+    if not media_path.is_file():
+        print(f"[ERROR] Specified media path is not a file: {media_path}", file=sys.stderr)
+        return 1
+
+    if parsed.threads <= 0:
+        print("[ERROR] --threads must be a positive integer (>= 1).", file=sys.stderr)
+        return 1
+
+    if parsed.target_duration <= 0 or parsed.max_duration <= 0:
+        print("[ERROR] Duration settings must be positive numbers.", file=sys.stderr)
+        return 1
+
+    if parsed.target_duration > parsed.max_duration:
+        print("[ERROR] --target-duration cannot be greater than --max-duration.", file=sys.stderr)
+        return 1
 
     whisper_cfg = WhisperConfig(
         model_size=parsed.model,

@@ -37,14 +37,20 @@
 ### Dependency & Hardware Audit Results
 1. **FFmpeg & FFprobe:**
    - *Audit Status:* **VERIFIED INSTALLED**. `ffmpeg` and `ffprobe` (version 2025-06-28 git-cfd1f81e7d) are available directly on system `PATH` with full codec support (`libmp3lame`, `libopus`, etc.).
-2. **Python Environment:**
-   - *Audit Status:* **VERIFIED**. Python 3.13.0 64-bit.
-   - Core audio models and segmentation algorithms are implemented using standard library dataclasses (`dataclasses`, `json`, `subprocess`, `re`, `wave`), eliminating artificial dependency roadblocks.
-   - `backend/requirements.txt` specifies `faster-whisper>=1.0.0` for real local German speech recognition.
+2. **Python Virtual Environment & Dependencies:**
+   - *Audit Status:* **VERIFIED INSTALLED & FUNCTIONAL**.
+   - Created isolated project virtual environment at `.venv/` using Python 3.13.0 (64-bit).
+   - Successfully installed and verified imports:
+     - `faster-whisper` (v1.2.1)
+     - `ctranslate2` (v4.8.4, official Windows x86_64 cp313 wheel)
+     - `onnxruntime` (v1.31.1)
+     - `tokenizers` (v0.23.3)
+     - `av` (v19.0.2)
 3. **Hardware Acceleration & Compute Type:**
    - *Confirmed Configuration:* CPU inference with `faster-whisper`, `compute_type="int8"`, and 4 to 6 worker threads. This leverages the Ryzen 5 2600's 12 threads efficiently while leaving headroom for system responsiveness.
-4. **Automated Test Results (Milestone 2):**
-   - **16/16 tests passing** in `backend/tests/`:
+4. **Automated Test Results (Milestone 2 Verified):**
+   - **20/20 tests passing** in `backend/tests/` using `.venv` Python:
+     - 4 tests for CLI argument parsing, file/directory checks, thread validation, and duration sanity in `test_cli.py`.
      - 9 tests for German syntax, abbreviations, clause splitting, pause splitting, and overflow protection in `test_segmenter.py`.
      - 3 tests for FFprobe audio metadata inspection in `test_media_probe.py`.
      - 1 test for FFmpeg 16kHz mono normalization and master preservation in `test_media_converter.py`.
