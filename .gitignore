@@ -1,0 +1,60 @@
+# Environments & Dependencies
+.venv/
+venv/
+ENV/
+env/
+node_modules/
+.pnpm-store/
+
+# Python Cache & Testing
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Frontend Build Outputs
+frontend/dist/
+frontend/build/
+dist/
+build/
+
+# Local Media & Runtime Data
+data/*
+!data/.gitkeep
+!data/projects/
+data/projects/*
+!data/projects/.gitkeep
+*.mp3
+*.wav
+*.webm
+*.ogg
+*.m4a
+*.aac
+*.flac
+*.mp4
+*.mkv
+
+# SQLite & Local Databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Environment Variables & Secrets
+.env
+.env*.local
+*.pem
+*.key
+
+# Operating System & Editor Files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
