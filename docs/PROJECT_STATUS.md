@@ -1,8 +1,8 @@
 # Project Status — Deutsch Shadow
 
 **Last Updated:** 2026-10-27  
-**Current Phase:** Milestone 3 Complete — Browser Debugging Player Operational & Verified  
-**Overall Status:** 🟢 **Milestone 3 Completed — Ready for Milestone 4 Approval**
+**Current Phase:** Milestone 4 Complete — Database & Backend API Operational & Verified  
+**Overall Status:** 🟢 **Milestone 4 Completed — Ready for Milestone 5 (Frontend Library & Import UI)**
 
 ---
 
@@ -13,8 +13,8 @@
 | **1** | Initialize Git & Finalize Project Documentation | 🟢 **Completed** | None (Git initialized & verified) | Completed |
 | **2** | Build and Test Audio-Processing Pipeline | 🟢 **Completed** | Real-audio pipeline audited & verified | Completed |
 | **3** | Browser-Based Debugging Player & Usability Polish | 🟢 **Completed** | Player UI, blind mode, upload & fixes verified | Completed |
-| **4** | Database & Backend API | 🟡 **Ready to Start** | Awaiting approval to proceed | Milestone 4 |
-| **5** | Recording Library & Import Interface | ⚪ Planned | Depends on Milestone 4 | Milestone 5 |
+| **4** | Database & Backend API | 🟢 **Completed** | SQLite schema & FastAPI endpoints verified | Completed |
+| **5** | Recording Library & Import Interface | 🟡 **Ready to Start** | Awaiting approval to proceed | Milestone 5 |
 | **6** | Shadowing Player, Transcript Editing & Boundaries | ⚪ Planned | Depends on Milestone 5 | Milestone 6 |
 | **7** | Microphone Recording & Persistent Storage | ⚪ Planned | Depends on Milestone 6 | Milestone 7 |
 | **8** | Auto-Pause Loop & Instant Comparison | ⚪ Planned | Depends on Milestone 7 | Milestone 8 |
@@ -77,6 +77,26 @@
    - **Automated Test Suite:**
      - Expanded to **34 tests** in `backend/tests/` covering file uploads, CORS preflight, resets, range requests, duration clamping, segmentation, and upload failure isolation. All pass in ~3.8s.
    - **Live Development Server:** Running at `http://127.0.0.1:8080`.
+7. **Milestone 4 Database & Backend API Results (Verified):**
+   - **Database Architecture:** SQLite storage with async engine (`aiosqlite`) via SQLAlchemy 2.0 ORM (`projects`, `segments`, `recordings`, `project_settings`).
+   - **PRAGMA Enforcement:** Enforces `PRAGMA foreign_keys = ON;` on all connections ensuring relational integrity and cascading deletes.
+   - **Data Validation & Schemas:** Pydantic v2 schemas across all routes (`ProjectSummary`, `ProjectDetail`, `SegmentRead`, `SegmentUpdate`, `SegmentSplitResponse`, `SegmentMergeResponse`, `SystemCapabilities`, `WhisperModelTier`).
+   - **RESTful Endpoints Operational:**
+     - `GET /api/health`: Healthcheck.
+     - `GET /api/system/capabilities`: Live hardware audit (CPU cores, RAM in GB via ctypes, CUDA probe, FFmpeg binary & version, recommended model tier).
+     - `GET /api/system/models`: Model discovery.
+     - `GET /api/projects`: List all projects with segment counts.
+     - `POST /api/projects/import`: Media upload & validation, background or synchronous pipeline processing.
+     - `GET /api/projects/{id}`: Detailed project status and configuration.
+     - `DELETE /api/projects/{id}`: Cascade deletion from database and file removal from disk.
+     - `GET /api/projects/{id}/segments`: Ordered segment list.
+     - `PATCH /api/segments/{id}`: Text editing and timestamp adjustment with boundary validation.
+     - `POST /api/segments/{id}/split`: Segment splitting with atomic index shifting.
+     - `POST /api/segments/{id}/merge`: Segment merging with neighboring segment.
+     - `GET /api/media/{project_id}/master`: HTTP 206 Partial Content byte-range streaming.
+   - **Verification & Test Coverage:**
+     - **38/38 automated tests passing** across `pytest` and `unittest` suites.
+     - Real-audio integration verified on `data/sample.mp4` (`scripts/test_milestone4_real.py`).
 
 ---
 

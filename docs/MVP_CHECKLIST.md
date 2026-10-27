@@ -84,22 +84,23 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
 - **Goal:** Implement persistent data storage via SQLite and expose full REST API endpoints for projects, segments, recordings, and media streaming.
 - **Prerequisites:** Milestone 3 complete.
 - **Tasks:**
-  - [ ] Implement SQLite schema and ORM models via SQLAlchemy / aiosqlite (`projects`, `segments`, `recordings`, `project_settings`).
-  - [ ] Implement HTTP Range Request audio streaming endpoint (`GET /api/media/{project_id}/master`) for seamless browser seeking.
-  - [ ] Implement project CRUD endpoints (`GET /api/projects`, `POST /api/projects/import`, `GET /api/projects/{id}`, `DELETE /api/projects/{id}`).
-  - [ ] Implement segment CRUD and editing endpoints:
+  - [x] Implement SQLite schema and ORM models via SQLAlchemy / aiosqlite (`projects`, `segments`, `recordings`, `project_settings`).
+  - [x] Implement HTTP Range Request audio streaming endpoint (`GET /api/media/{project_id}/master`) for seamless browser seeking.
+  - [x] Implement project CRUD endpoints (`GET /api/projects`, `POST /api/projects/import`, `GET /api/projects/{id}`, `DELETE /api/projects/{id}`).
+  - [x] Implement segment CRUD and editing endpoints:
     - `PATCH /api/segments/{id}` (text update, boundary adjustments).
     - `POST /api/segments/{id}/split` (split segment into two).
     - `POST /api/segments/{id}/merge` (merge segment with neighbor).
-  - [ ] Implement hardware and model query endpoint (`GET /api/system/capabilities`).
+  - [x] Implement hardware and model query endpoint (`GET /api/system/capabilities`, `GET /api/system/models`).
 - **Testing Requirements:**
   - API integration tests (`pytest` with `TestClient` / `httpx`) covering:
-    - Media upload and project creation flow.
-    - HTTP 206 Partial Content Range header verification.
-    - Segment boundary updates, split, and merge consistency.
-    - Cascade deletion of files and database records when a project is deleted.
+    - [x] Media upload and project creation flow.
+    - [x] HTTP 206 Partial Content Range header verification.
+    - [x] Segment boundary updates, split, and merge consistency.
+    - [x] Cascade deletion of files and database records when a project is deleted.
+    - [x] Real-audio end-to-end integration test with `data/sample.mp4` (`scripts/test_milestone4_real.py`).
 - **Completion Criteria:**
-  - All REST endpoints operational, returning typed Pydantic responses with 100% test pass rate.
+  - [x] All REST endpoints operational, returning typed Pydantic responses with 100% test pass rate (38/38 tests passing).
 
 ---
 

@@ -10,8 +10,9 @@ uvicorn[standard]>=0.28.0
 python-multipart>=0.0.9
 
 # Relational Storage & SQLite ORM
-sqlalchemy>=2.0.0
+sqlalchemy[asyncio]>=2.0.0
 aiosqlite>=0.20.0
+greenlet>=3.0.0
 
 # Data Validation & Typing
 pydantic>=2.6.0
