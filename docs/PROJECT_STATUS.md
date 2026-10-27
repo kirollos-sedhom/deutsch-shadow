@@ -1,8 +1,8 @@
 # Project Status — Deutsch Shadow
 
-**Last Updated:** 2026-10-27  
-**Current Phase:** Milestone 4 Complete — Database & Backend API Operational & Verified  
-**Overall Status:** 🟢 **Milestone 4 Completed — Ready for Milestone 5 (Frontend Library & Import UI)**
+**Last Updated:** 2026-10-28  
+**Current Phase:** Milestone 5 Complete — Recording Library & Import Interface Operational & Verified  
+**Overall Status:** 🟢 **Milestone 5 Completed — Ready for Milestone 6 (Shadowing Player Core & Editing)**
 
 ---
 
@@ -14,8 +14,8 @@
 | **2** | Build and Test Audio-Processing Pipeline | 🟢 **Completed** | Real-audio pipeline audited & verified | Completed |
 | **3** | Browser-Based Debugging Player & Usability Polish | 🟢 **Completed** | Player UI, blind mode, upload & fixes verified | Completed |
 | **4** | Database & Backend API | 🟢 **Completed** | SQLite schema & FastAPI endpoints verified | Completed |
-| **5** | Recording Library & Import Interface | 🟡 **Ready to Start** | Awaiting approval to proceed | Milestone 5 |
-| **6** | Shadowing Player, Transcript Editing & Boundaries | ⚪ Planned | Depends on Milestone 5 | Milestone 6 |
+| **5** | Recording Library & Import Interface | 🟢 **Completed** | React/TypeScript SPA + Vite + FastAPI verified | Completed |
+| **6** | Shadowing Player, Transcript Editing & Boundaries | 🟡 **Ready to Start** | Awaiting approval to proceed | Milestone 6 |
 | **7** | Microphone Recording & Persistent Storage | ⚪ Planned | Depends on Milestone 6 | Milestone 7 |
 | **8** | Auto-Pause Loop & Instant Comparison | ⚪ Planned | Depends on Milestone 7 | Milestone 8 |
 | **9** | Test, Fix Bugs & Polish MVP | ⚪ Planned | Depends on Milestone 8 | Milestone 9 |

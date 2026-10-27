@@ -109,20 +109,25 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
 - **Goal:** Create the React frontend project, application shell, media import interface, and project management library.
 - **Prerequisites:** Milestone 4 complete.
 - **Tasks:**
-  - [ ] Initialize frontend application with Vite, React, TypeScript, and styling framework.
-  - [ ] Implement API client service with typed contracts corresponding to backend Pydantic models.
-  - [ ] Build **Project Library View**:
+  - [x] Initialize frontend application with Vite, React, TypeScript, and styling framework.
+  - [x] Implement API client service with typed contracts corresponding to backend Pydantic models.
+  - [x] Build **Project Library View**:
     - Project cards/table showing title, duration, segment count, date created, and progress.
     - Delete project confirmation modal.
-  - [ ] Build **Import Modal / Drag-and-Drop Zone**:
+  - [x] Build **Import Modal / Drag-and-Drop Zone**:
     - Support drag-and-drop or file browsing for audio/video files.
     - Display upload and transcription progress indicators.
     - Hardware-aware model selection option (e.g. `base` vs. `small`).
 - **Testing Requirements:**
-  - Frontend component tests (Vitest / React Testing Library) for import file validation and library rendering.
-  - End-to-end integration test: uploading a German audio file through the UI, observing progress, and navigating to the created project.
+  - Frontend component tests (Vitest / React Testing Library) for import file validation and library rendering:
+    - [x] `src/utils/formatters.test.ts` (4 unit tests passing).
+    - [x] `src/components/ProjectList.test.tsx` (2 component tests passing).
+    - [x] `src/components/ImportModal.test.tsx` (2 component tests passing).
+  - End-to-end integration test: uploading a German audio file through the UI, observing progress, and navigating to the created project:
+    - [x] `backend/tests/test_milestone5_frontend_integration.py` (2 integration tests passing).
+    - [x] Live E2E test `scripts/verify_milestone5_e2e.py` on real audio with live background polling and HTTP 206 streaming verification passing.
 - **Completion Criteria:**
-  - User can launch the web interface, upload a German audio file, view transcription progress, and see the processed project in the library.
+  - [x] User can launch the web interface, upload a German audio file, view transcription progress, and see the processed project in the library.
 
 ---
 
