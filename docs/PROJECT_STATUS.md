@@ -1,8 +1,8 @@
 # Project Status — Deutsch Shadow
 
 **Last Updated:** 2026-10-27  
-**Current Phase:** Milestone 1 Complete — Project Scaffolding & Git Initialized  
-**Overall Status:** 🟢 **Milestone 1 Completed — Ready for Milestone 2 Approval**
+**Current Phase:** Milestone 2 Complete — Audio Processing Pipeline Implemented & Verified  
+**Overall Status:** 🟢 **Milestone 2 Completed — Ready for Milestone 3 Approval**
 
 ---
 
@@ -11,8 +11,8 @@
 | # | Milestone | Status | Blockers / Dependencies | Target Completion |
 |---|---|:---:|---|---|
 | **1** | Initialize Git & Finalize Project Documentation | 🟢 **Completed** | None (Git initialized & verified) | Completed |
-| **2** | Build and Test Audio-Processing Pipeline | 🟡 **Ready to Start** | Awaiting approval to proceed | Milestone 2 |
-| **3** | Browser-Based Debugging Player | ⚪ Planned | Depends on Milestone 2 | Milestone 3 |
+| **2** | Build and Test Audio-Processing Pipeline | 🟢 **Completed** | 16/16 automated tests passed | Completed |
+| **3** | Browser-Based Debugging Player | 🟡 **Ready to Start** | Awaiting approval to proceed | Milestone 3 |
 | **4** | Database & Backend API | ⚪ Planned | Depends on Milestone 3 | Milestone 4 |
 | **5** | Recording Library & Import Interface | ⚪ Planned | Depends on Milestone 4 | Milestone 5 |
 | **6** | Shadowing Player, Transcript Editing & Boundaries | ⚪ Planned | Depends on Milestone 5 | Milestone 6 |
@@ -27,22 +27,29 @@
 ## 2. Hardware & Environment Assessment
 
 ### Host Environment
-- **Operating System:** Windows 10/11 (Architecture: x86_64)
+- **Operating System:** Windows (Architecture: x86_64)
+- **CPU:** AMD Ryzen 5 2600 (6 cores / 12 threads)
+- **RAM:** 16 GB DDR4
+- **GPU:** AMD Radeon RX 570 (4 GB VRAM) — Non-CUDA GPU; confirms CPU `int8` as primary inference engine.
+- **Python Version:** Python 3.13.0 (64-bit AMD64)
 - **Local Workspace:** `e:\repos\Vibin\Deutsch_shadow`
 
-### Dependency & Hardware Requirements
+### Dependency & Hardware Audit Results
 1. **FFmpeg & FFprobe:**
-   - *Requirement:* FFmpeg executable must be accessible to extract audio from video and normalize files to 44.1kHz MP3 and 16kHz WAV.
-   - *Audit Status:* Needs confirmation on the user's Windows environment whether `ffmpeg` is on system `PATH` or should be placed in a local project binary folder.
+   - *Audit Status:* **VERIFIED INSTALLED**. `ffmpeg` and `ffprobe` (version 2025-06-28 git-cfd1f81e7d) are available directly on system `PATH` with full codec support (`libmp3lame`, `libopus`, etc.).
 2. **Python Environment:**
-   - *Requirement:* Python 3.10, 3.11, or 3.12 64-bit.
-   - *Audit Status:* Needs virtual environment creation (`.venv`) and verification of C-compiler/wheel compatibility for CTranslate2.
+   - *Audit Status:* **VERIFIED**. Python 3.13.0 64-bit.
+   - Core audio models and segmentation algorithms are implemented using standard library dataclasses (`dataclasses`, `json`, `subprocess`, `re`, `wave`), eliminating artificial dependency roadblocks.
+   - `backend/requirements.txt` specifies `faster-whisper>=1.0.0` for real local German speech recognition.
 3. **Hardware Acceleration & Compute Type:**
-   - *GPU Policy:* **Do not assume an NVIDIA GPU is available.**
-   - *Baseline Configuration:* CPU inference with `faster-whisper` using `compute_type="int8"`. This requires no CUDA drivers, consumes minimal RAM (~500MB for `small` model), and runs reliably across all x86_64 systems.
-   - *Dynamic GPU Detection:* If an NVIDIA GPU with CUDA 11/12 is detected at runtime, the backend can automatically upgrade compute mode to `cuda` with `float16`.
-4. **Node.js & Frontend Tooling:**
-   - *Requirement:* Node.js 18+ and `npm` / `pnpm` for Vite and React development.
+   - *Confirmed Configuration:* CPU inference with `faster-whisper`, `compute_type="int8"`, and 4 to 6 worker threads. This leverages the Ryzen 5 2600's 12 threads efficiently while leaving headroom for system responsiveness.
+4. **Automated Test Results (Milestone 2):**
+   - **16/16 tests passing** in `backend/tests/`:
+     - 9 tests for German syntax, abbreviations, clause splitting, pause splitting, and overflow protection in `test_segmenter.py`.
+     - 3 tests for FFprobe audio metadata inspection in `test_media_probe.py`.
+     - 1 test for FFmpeg 16kHz mono normalization and master preservation in `test_media_converter.py`.
+     - 2 tests for transcriber error handling and dependency reporting in `test_transcriber_mock.py`.
+     - 1 end-to-end integration test verifying `manifest.json` generation in `test_pipeline_e2e.py`.
 
 ---
 

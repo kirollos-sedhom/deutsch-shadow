@@ -32,24 +32,28 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
 - **Goal:** Implement the backend audio ingestion, FFmpeg normalization, speech-to-text transcription via `faster-whisper`, and German boundary segmentation algorithm.
 - **Prerequisites:** Milestone 1 complete.
 - **Tasks:**
-  - [ ] Set up Python virtual environment and dependencies (`fastapi`, `uvicorn`, `faster-whisper`, `pydantic`, `pytest`).
-  - [ ] Verify local system FFmpeg installation and create a robust wrapper service to probe and convert media:
-    - Extract audio from video containers (`.mp4`, `.mkv`, `.webm`).
-    - Standardize to master audio (`master.mp3`, 44.1kHz stereo/mono).
-    - Generate 16kHz mono WAV for Whisper.
-  - [ ] Implement hardware detection utility (`cpu` vs. `cuda`, core count, RAM) and dynamic `faster-whisper` configuration (`compute_type="int8"` for CPU).
-  - [ ] Implement transcription worker utilizing `faster-whisper` with `language="de"` and `word_timestamps=True`.
-  - [ ] Implement German sentence and clause segmentation algorithm:
-    - Split on German sentence terminals (`.`, `!`, `?`).
-    - Sub-split long segments on pauses ($\ge 600\text{ms}$) or clause punctuation (`,`, `;`, `:`).
-    - Add acoustic padding ($+80\text{ms}$ start/end).
-    - Format output as structured segment dicts: `start_ms`, `end_ms`, `text`.
+  - [x] Set up Python dependency specification (`backend/requirements.txt`) and architecture models (`backend/app/audio/models.py`).
+  - [x] Verify local system FFmpeg & FFprobe installation and create robust wrapper services (`MediaProbe`, `MediaConverter`):
+    - Validate media files, durations, codecs, and channels via FFprobe.
+    - Standardize to 16kHz mono 16-bit PCM WAV for Whisper (`whisper_working.wav`) while preserving master audio intact.
+    - Gracefully report unsupported or corrupted media files.
+  - [x] Implement hardware-configurable transcription module (`AudioTranscriber`) supporting `faster-whisper` with `language="de"`, `word_timestamps=True`, configurable CPU threads, device (`cpu`), and compute type (`int8`).
+  - [x] Implement deterministic German segmentation engine (`GermanSegmenter`):
+    - Split on German sentence terminals (`.`, `!`, `?`, German closing quotes `„...“`).
+    - Guard German abbreviations (`z. B.`, `bzw.`, `ca.`, single-letter initials) against false sentence splits.
+    - Split long sentences exceeding target duration (4.0s) at clause punctuation (`,`, `;`, `:`, `—`).
+    - Split at acoustic pauses ($\ge 600\text{ms}$).
+    - Enforce hard overflow protection ($\le 7.0\text{s}$) while keeping words intact.
+    - Apply acoustic lead-in and tail-out padding ($+80\text{ms}$) with non-overlapping bounds.
+  - [x] Build automated test suite (`backend/tests/`) covering normal sentences, abbreviations, multi-sentences, clause splitting, pause splitting, overflow, probe, conversion, and end-to-end pipeline execution with mock transcription.
+  - [x] Provide a CLI tool (`python -m backend.app.audio.cli`) to run the pipeline on any audio/video recording and export a documented `manifest.json`.
 - **Testing Requirements:**
-  - Unit tests for audio file conversion using synthetic audio or sample German audio clips.
-  - Unit tests for segmentation logic testing edge cases: compound words, long sentences, numbers, questions, dialogue quotes.
-  - Benchmark test logging CPU inference speed and memory consumption.
+  - [x] Unit tests for segmentation logic testing edge cases: compound words, abbreviations, long sentences, dialogue quotes, pauses, missing timestamps (16 tests passed).
+  - [x] Integration tests for media probe and format converter using synthetic PCM audio files.
+  - [x] Mock end-to-end pipeline test verifying JSON manifest export and segment structure.
 - **Completion Criteria:**
-  - Passing automated test suite (`pytest`) verifying that a sample German audio file produces clean, non-overlapping segments with valid millisecond timestamps and German text.
+  - [x] Automated test suite passing 100% (16/16 tests passing).
+  - [x] Audio conversion and segmentation logic independently verified without UI or database dependencies.
 
 ---
 

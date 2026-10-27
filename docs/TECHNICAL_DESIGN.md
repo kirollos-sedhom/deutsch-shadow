@@ -97,21 +97,23 @@ flowchart LR
   - `medium` (~1.5GB): High accuracy for noisy audio; requires 8+ CPU cores or a dedicated CUDA GPU (4GB+ VRAM).
 
 ### 2.3 German Syntax & Punctuation Segmentation Algorithm
-Whisper raw segments are often either too long (entire paragraphs) or arbitrarily chopped at 30-second token windows. The segmentation engine reorganizes word-level timestamps into ideal shadowing units:
+Whisper raw segments are often either too long (entire paragraphs) or arbitrarily chopped at 30-second token windows. The segmentation engine (`GermanSegmenter`) reorganizes word-level timestamps into ideal shadowing units:
 
 1. **Target Segment Constraints:**
-   - Ideal duration: **2.5 to 6.5 seconds**.
-   - Maximum segment duration: **8.0 seconds**.
-   - Minimum segment duration: **1.2 seconds**.
+   - Ideal duration: **2.5 to 4.5 seconds** (`target_duration_s = 4.0`).
+   - Maximum segment duration: **7.0 seconds** (`max_duration_s = 7.0`).
+   - Minimum segment duration: **1.2 seconds** (`min_duration_s = 1.2`).
 2. **Splitting Rules (in priority order):**
-   - **Terminal Sentence Punctuation:** Always split on `.`, `!`, `?` followed by whitespace, provided the accumulated segment duration exceeds the minimum threshold (1.2s).
-   - **Long Acoustic Pauses:** Split when a gap between consecutive words is $\ge 600\text{ms}$.
-   - **Clause Punctuation (Subordinate clauses):** If accumulated duration exceeds 4.5 seconds, split on `,`, `;`, `:`, `—` or conjunction words (e.g., *weil*, *dass*, *obwohl*, *aber*, *wenn*).
-   - **Hard Overflow:** If a continuous run of speech has no punctuation and reaches 8.0 seconds, force a split at the nearest word boundary.
-3. **Acoustic Padding:**
-   - Add $+80\text{ms}$ lead-in (start earlier) to preserve initial plosives and glottal stops (*Knacklaute*).
-   - Add $+80\text{ms}$ tail-out (end later) to avoid truncating unstressed German endings (e.g. *-en*, *-er*, *-t*).
-   - Clamp start times to $\ge 0$ and avoid overlapping the next segment start.
+   - **Terminal Sentence Punctuation:** Split on `.`, `!`, `?` and German closing quotes (`“`, `”`, `»`, `«`).
+   - **Abbreviation Guard:** Filter out known German abbreviations (`z. B.`, `bzw.`, `ca.`, `d. h.`, `u. a.`, `usw.`, `Dr.`, `Prof.`) and single-letter initials to prevent false splits.
+   - **Long Acoustic Pauses:** Split when a gap between consecutive words is $\ge 600\text{ms}$ (`pause_split_threshold_s = 0.6`).
+   - **Clause Punctuation (Subordinate clauses):** If accumulated duration reaches $\ge 4.0\text{s}$, split on clause punctuation (`,`, `;`, `:`, `—`).
+   - **Hard Overflow Protection:** If a continuous run of speech has no punctuation and reaches 7.0 seconds, force a split at the word boundary.
+3. **Acoustic Padding & Alignment:**
+   - Add $+80\text{ms}$ lead-in padding to preserve initial plosives and glottal stops (*Knacklaute*).
+   - Add $+80\text{ms}$ tail-out padding to avoid truncating unstressed German endings (e.g. *-en*, *-er*, *-t*).
+   - Enforce strictly non-overlapping boundaries (`padded_start_ms >= last_end_ms`).
+   - Merge orphan trailing fragments shorter than `min_duration_s` into previous segment.
 
 ---
 
