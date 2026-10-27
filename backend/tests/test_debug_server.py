@@ -8,7 +8,10 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-from backend.app.debug_server import create_debug_server
+from backend.app.debug_server import create_debug_server, DebugPlayerHandler
+from backend.app.audio.pipeline import AudioPipeline
+from backend.tests.test_pipeline_e2e import MockGermanTranscriber
+from backend.tests.test_media_probe import create_synthetic_wav
 
 
 class TestDebugPlayerServer(unittest.TestCase):
@@ -161,19 +164,108 @@ class TestDebugPlayerServer(unittest.TestCase):
             data = json.loads(err.read().decode("utf-8"))
             self.assertIn("Unsupported file format", data["error"])
 
-    def test_reset_endpoint_returns_200(self):
-        """POST /api/reset must restore default manifest and return 200."""
-        req = urllib.request.Request(
-            f"{self.base_url}/api/reset",
-            data=b"{}",
-            method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req) as resp:
-            self.assertEqual(resp.status, 200)
-            data = json.loads(resp.read().decode("utf-8"))
-            self.assertTrue(data["success"])
-            self.assertIn("Reset to default", data["message"])
+    def test_upload_valid_media_end_to_end(self):
+        """POST /api/upload with valid media must process, write manifest, and switch active media."""
+        # Use MockGermanTranscriber for fast deterministic end-to-end execution
+        mock_pipeline = AudioPipeline(transcriber=MockGermanTranscriber())
+        DebugPlayerHandler.custom_pipeline = mock_pipeline
+
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            create_synthetic_wav(tmp_path, duration_s=2.0)
+            wav_bytes = tmp_path.read_bytes()
+
+            req = urllib.request.Request(
+                f"{self.base_url}/api/upload?filename=test_clip.wav",
+                data=wav_bytes,
+                method="POST",
+                headers={
+                    "Content-Type": "application/octet-stream",
+                    "Content-Length": str(len(wav_bytes)),
+                },
+            )
+            with urllib.request.urlopen(req) as resp:
+                self.assertEqual(resp.status, 200)
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data["success"])
+                self.assertEqual(data["source_file"], "test_clip.wav")
+                self.assertEqual(data["segments_count"], 2)
+                self.assertIn("manifest_path", data)
+                self.assertIn("audio_path", data)
+
+            # Check GET /api/manifest returns the newly uploaded segments
+            manifest_req = urllib.request.Request(f"{self.base_url}/api/manifest")
+            with urllib.request.urlopen(manifest_req) as resp:
+                self.assertEqual(resp.status, 200)
+                mdata = json.loads(resp.read().decode("utf-8"))
+                self.assertEqual(len(mdata["practice_segments"]), 2)
+                self.assertEqual(mdata["practice_segments"][0]["text"], "Hallo zusammen.")
+
+            # Check GET /api/audio streams the newly generated audio
+            audio_req = urllib.request.Request(f"{self.base_url}/api/audio")
+            with urllib.request.urlopen(audio_req) as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertGreater(int(resp.headers.get("Content-Length", 0)), 0)
+
+            # Finally, verify reset restores original sample
+            reset_req = urllib.request.Request(
+                f"{self.base_url}/api/reset",
+                data=b"{}",
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(reset_req) as resp:
+                self.assertEqual(resp.status, 200)
+
+            with urllib.request.urlopen(manifest_req) as resp:
+                mdata = json.loads(resp.read().decode("utf-8"))
+                self.assertEqual(len(mdata["practice_segments"]), 13)
+        finally:
+            DebugPlayerHandler.custom_pipeline = None
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    def test_upload_pipeline_failure_preserves_state(self):
+        """Pipeline failure must return 500 and keep current active media intact."""
+        initial_manifest = DebugPlayerHandler.manifest_path
+        initial_audio = DebugPlayerHandler.audio_path
+
+        class FaultyPipeline:
+            def process(self, *args, **kwargs):
+                raise RuntimeError("Simulated Whisper Failure for Testing")
+
+        DebugPlayerHandler.custom_pipeline = FaultyPipeline()
+        try:
+            fake_wav = b"RIFF....WAVEfmt ...."
+            req = urllib.request.Request(
+                f"{self.base_url}/api/upload?filename=faulty.wav",
+                data=fake_wav,
+                method="POST",
+                headers={
+                    "Content-Type": "application/octet-stream",
+                    "Content-Length": str(len(fake_wav)),
+                },
+            )
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    self.assertEqual(resp.status, 500)
+            except urllib.error.HTTPError as err:
+                self.assertEqual(err.code, 500)
+                err_data = json.loads(err.read().decode("utf-8"))
+                self.assertFalse(err_data["success"])
+                self.assertIn("Simulated Whisper Failure", err_data["error"])
+
+            # Verify active server paths were NOT mutated
+            self.assertEqual(DebugPlayerHandler.manifest_path, initial_manifest)
+            self.assertEqual(DebugPlayerHandler.audio_path, initial_audio)
+
+            # Verify manifest is still valid and reachable
+            with urllib.request.urlopen(f"{self.base_url}/api/manifest") as resp:
+                self.assertEqual(resp.status, 200)
+        finally:
+            DebugPlayerHandler.custom_pipeline = None
 
 
 if __name__ == "__main__":

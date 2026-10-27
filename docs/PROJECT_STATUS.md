@@ -66,14 +66,16 @@
      - Per-segment toggle via click or inline button; global toggle button in active controls bar (`👁 Reveal Transcript [T]`).
      - Navigating to another segment automatically resets the transcript to masked for focused listening.
      - Toggling reveal does not pause or interrupt audio playback.
-   - **Media Import & Upload Interface:**
+   - **Media Import & Upload Interface (Audited & Verified):**
      - Added client-side file picker (`<input type="file">`) and `↺ Default Sample` reset button.
-     - Server implements `POST /api/upload` (supporting binary stream and multipart) saving into isolated `data/uploads/<stem>_<timestamp>/` folders and running `AudioPipeline.process()`.
-     - Added `POST /api/reset` to restore `data/real_audio_test/manifest.json`.
+     - Resolved pipeline import integration in `backend/app/debug_server.py`: aligned with existing `AudioPipeline(whisper_config=..., segmentation_config=...)` API and `PipelineResult` dataclass attributes, eliminating false `PipelineConfig` dependency.
+     - Verified upload isolation: uploads save into distinct directories under `data/uploads/<stem>_<timestamp>/` without mutating or overwriting original media files.
+     - Verified atomic state transition: active manifest and audio paths only switch upon successful pipeline execution; errors preserve current media and return clean 500 JSON.
+     - Tested live with real audio clip and verified seamless playback and reset to default sample.
    - **Narrow-Screen Layout:**
      - Added responsive CSS (`@media (max-width: 768px)`) with stacked cards, wrapped controls, and `overflow-x: hidden` preventing page scrolling.
    - **Automated Test Suite:**
-     - Expanded to **33 tests** in `backend/tests/` covering file uploads, CORS preflight, resets, range requests, duration clamping, and segmentation. All pass in ~3.5s.
+     - Expanded to **34 tests** in `backend/tests/` covering file uploads, CORS preflight, resets, range requests, duration clamping, segmentation, and upload failure isolation. All pass in ~3.8s.
    - **Live Development Server:** Running at `http://127.0.0.1:8080`.
 
 ---

@@ -21,6 +21,7 @@ class DebugPlayerHandler(BaseHTTPRequestHandler):
     manifest_path: Path = Path("data/real_audio_test/manifest.json")
     audio_path: Path = Path("data/real_audio_test/whisper_working.wav")
     html_path: Path = Path("frontend/debug_player.html")
+    custom_pipeline: Optional[Any] = None
 
     server_version = "DeutschShadowDebug/1.0"
 
@@ -176,24 +177,37 @@ class DebugPlayerHandler(BaseHTTPRequestHandler):
 
         # Process with AudioPipeline
         try:
-            from backend.app.audio.pipeline import AudioPipeline, PipelineConfig
-            from backend.app.audio.transcriber import WhisperConfig
+            if self.custom_pipeline is not None:
+                pipeline = self.custom_pipeline
+            else:
+                from backend.app.audio.pipeline import AudioPipeline
+                from backend.app.audio.models import WhisperConfig, SegmentationConfig
 
-            pipeline = AudioPipeline(
-                PipelineConfig(
-                    whisper_config=WhisperConfig(
-                        model_size="base",
-                        device="cpu",
-                        compute_type="int8",
-                        cpu_threads=4,
-                    )
+                whisper_cfg = WhisperConfig(
+                    model_size="base",
+                    device="cpu",
+                    compute_type="int8",
+                    cpu_threads=4,
+                    language="de",
                 )
-            )
-            result = pipeline.process(source_file=target_file, output_dir=upload_dir)
+                segmentation_cfg = SegmentationConfig()
+                pipeline = AudioPipeline(
+                    whisper_config=whisper_cfg,
+                    segmentation_config=segmentation_cfg,
+                )
 
-            # Switch server's active manifest and audio paths
-            DebugPlayerHandler.manifest_path = result.manifest_path.resolve()
-            DebugPlayerHandler.audio_path = result.working_audio_path.resolve()
+            result = pipeline.process(
+                source_media_path=target_file,
+                output_dir=upload_dir,
+                save_manifest=True,
+            )
+
+            manifest_file = upload_dir / "manifest.json"
+            working_audio_file = Path(result.working_audio_file).resolve()
+
+            # Switch server's active manifest and audio paths only after successful processing
+            DebugPlayerHandler.manifest_path = manifest_file.resolve()
+            DebugPlayerHandler.audio_path = working_audio_file
 
             self._send_json_response(
                 HTTPStatus.OK,
@@ -201,10 +215,10 @@ class DebugPlayerHandler(BaseHTTPRequestHandler):
                     "success": True,
                     "message": "File processed and loaded successfully.",
                     "source_file": safe_name,
-                    "segments_count": len(result.segments),
-                    "duration_s": result.duration_s,
-                    "manifest_path": str(result.manifest_path),
-                    "audio_path": str(result.working_audio_path),
+                    "segments_count": result.total_segments,
+                    "duration_s": result.media_metadata.duration_s,
+                    "manifest_path": str(manifest_file.resolve()),
+                    "audio_path": str(working_audio_file),
                 },
             )
         except Exception as exc:
@@ -365,12 +379,14 @@ def create_debug_server(
     manifest_path: str | Path = "data/real_audio_test/manifest.json",
     audio_path: str | Path = "data/real_audio_test/whisper_working.wav",
     html_path: str | Path = "frontend/debug_player.html",
+    pipeline: Optional[Any] = None,
 ) -> ThreadingHTTPServer:
     """Factory function to configure and instantiate the debug server."""
     handler_cls = DebugPlayerHandler
     handler_cls.manifest_path = Path(manifest_path).resolve()
     handler_cls.audio_path = Path(audio_path).resolve()
     handler_cls.html_path = Path(html_path).resolve()
+    handler_cls.custom_pipeline = pipeline
 
     resolved_port = find_available_port(port)
     server = ThreadingHTTPServer((host, resolved_port), handler_cls)
