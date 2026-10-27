@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deutsch Shadow — Segment Debugging Player</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --primary-glow: rgba(56, 189, 248, 0.25);
+      --active-bg: rgba(56, 189, 248, 0.12);
+      --active-border: #38bdf8;
+      --success: #34d399;
+      --danger: #f87171;
+      --warning: #fbbf24;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      padding: 1.5rem;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .brand h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.025em;
+    }
+    .brand p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .badge-milestone {
+      background: #0284c7;
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Error Alert */
+    .alert {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid var(--danger);
+      color: #fca5a5;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      display: none;
+    }
+
+    /* Metadata Bar */
+    .meta-bar {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.75rem;
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      font-size: 0.85rem;
+    }
+    .meta-item { display: flex; flex-direction: column; }
+    .meta-label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; font-weight: 600; }
+    .meta-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+
+    /* Master Player Card */
+    .player-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Scrubber Track */
+    .timeline-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .time-labels {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .current-time-display {
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+    .scrubber {
+      width: 100%;
+      height: 8px;
+      appearance: none;
+      background: #334155;
+      border-radius: 4px;
+      outline: none;
+      cursor: pointer;
+    }
+    .scrubber::-webkit-slider-thumb {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--primary);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--primary-glow);
+    }
+
+    /* Player Controls */
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .btn-group { display: flex; align-items: center; gap: 0.5rem; }
+    button {
+      background: #334155;
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      padding: 0.5rem 0.9rem;
+      border-radius: 0.4rem;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    button:hover { background: #475569; }
+    button:active { transform: translateY(1px); }
+    button.btn-primary {
+      background: var(--primary);
+      color: #0f172a;
+      border-color: var(--primary);
+    }
+    button.btn-primary:hover { background: var(--primary-hover); }
+    button.active-toggle {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    /* Nudge Controls */
+    .nudge-panel {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      background: #0f172a;
+      padding: 0.4rem 0.75rem;
+      border-radius: 0.4rem;
+      border: 1px solid var(--card-border);
+    }
+    .nudge-label { color: var(--text-muted); font-weight: 600; }
+    .btn-nudge { padding: 0.2rem 0.5rem; font-size: 0.75rem; font-family: var(--font-mono); }
+
+    /* Segments List */
+    .segments-section h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .segments-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      max-height: 60vh;
+      overflow-y: auto;
+      padding-right: 0.25rem;
+    }
+    .segments-list::-webkit-scrollbar { width: 6px; }
+    .segments-list::-webkit-scrollbar-track { background: var(--bg); }
+    .segments-list::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 3px; }
+
+    /* Segment Card */
+    .seg-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      display: grid;
+      grid-template-columns: 45px 160px 1fr 75px;
+      align-items: center;
+      gap: 1rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .seg-card:hover {
+      background: #273549;
+      border-color: #475569;
+    }
+    .seg-card.active {
+      background: var(--active-bg);
+      border-color: var(--active-border);
+      box-shadow: 0 0 12px var(--primary-glow);
+    }
+    .seg-idx {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      background: #0f172a;
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+      text-align: center;
+    }
+    .seg-card.active .seg-idx {
+      background: var(--primary);
+      color: #0f172a;
+    }
+    .seg-timing {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .seg-range { color: var(--primary); font-weight: 600; }
+    .seg-duration { color: var(--text-muted); font-size: 0.7rem; }
+    .seg-text {
+      font-size: 0.95rem;
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .seg-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .seg-play-btn {
+      padding: 0.3rem 0.6rem;
+      font-size: 0.75rem;
+    }
+
+    /* Shortcuts Footer */
+    footer {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--card-border);
+      padding-top: 0.75rem;
+    }
+    .shortcut-key {
+      background: #334155;
+      color: #f1f5f9;
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <h1>Deutsch Shadow — Debugging Player</h1>
+        <p>Acoustic segment boundary verification & listening test harness</p>
+      </div>
+      <span class="badge-milestone">Milestone 3</span>
+    </header>
+
+    <div id="alertBox" class="alert"></div>
+
+    <div class="meta-bar" id="metaBar">
+      <div class="meta-item">
+        <span class="meta-label">Recording</span>
+        <span class="meta-val" id="metaSource">—</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Duration</span>
+        <span class="meta-val" id="metaDuration">—</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Language</span>
+        <span class="meta-val" id="metaLanguage">de (100%)</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Model</span>
+        <span class="meta-val" id="metaModel">base (int8)</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Total Segments</span>
+        <span class="meta-val" id="metaTotal">—</span>
+      </div>
+    </div>
+
+    <!-- Hidden native audio element -->
+    <audio id="audioElement" preload="auto" src="/api/audio"></audio>
+
+    <!-- Master Controller -->
+    <div class="player-card">
+      <div class="timeline-container">
+        <div class="time-labels">
+          <span class="current-time-display" id="timeCurrent">00:00.000</span>
+          <span id="activeSegmentBounds">No segment selected</span>
+          <span id="timeTotal">00:00.000</span>
+        </div>
+        <input type="range" id="scrubber" class="scrubber" min="0" max="100" step="0.001" value="0">
+      </div>
+
+      <div class="controls-row">
+        <div class="btn-group">
+          <button id="btnPrev" title="Previous Segment (Left Arrow)">◀ Prev</button>
+          <button id="btnPlayPause" class="btn-primary" title="Play/Pause Current Segment (Space)">▶ Play Segment</button>
+          <button id="btnNext" title="Next Segment (Right Arrow)">Next ▶</button>
+          <button id="btnReplay" title="Replay Active Segment (R)">↺ Replay</button>
+        </div>
+
+        <div class="btn-group">
+          <button id="btnLoop" title="Loop current segment (L)">🔁 Loop: OFF</button>
+          <button id="btnContinuous" title="Continuous playback mode">⏭ Continuous: OFF</button>
+        </div>
+
+        <!-- Millisecond Boundary Nudge Controls -->
+        <div class="nudge-panel">
+          <span class="nudge-label">Start:</span>
+          <button class="btn-nudge" id="nudgeStartMinus" title="Start 50ms earlier">-50ms</button>
+          <button class="btn-nudge" id="nudgeStartPlus" title="Start 50ms later">+50ms</button>
+          <span class="nudge-label" style="margin-left: 0.5rem;">End:</span>
+          <button class="btn-nudge" id="nudgeEndMinus" title="End 50ms earlier">-50ms</button>
+          <button class="btn-nudge" id="nudgeEndPlus" title="End 50ms later">+50ms</button>
+          <button class="btn-nudge" id="nudgeReset" style="color: var(--warning);" title="Reset boundary adjustments">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Practice Segments -->
+    <section class="segments-section">
+      <h2>
+        <span>Practice Segments</span>
+        <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);" id="segmentStats">Loading manifest...</span>
+      </h2>
+      <div class="segments-list" id="segmentsList"></div>
+    </section>
+
+    <footer>
+      <div>Keyboard Shortcuts: <span class="shortcut-key">Space</span> Play/Pause &bull; <span class="shortcut-key">←</span> <span class="shortcut-key">→</span> Prev/Next &bull; <span class="shortcut-key">L</span> Loop &bull; <span class="shortcut-key">R</span> Replay</div>
+      <div>Deutsch Shadow Local Debugger</div>
+    </footer>
+  </div>
+
+  <script>
+    // State management
+    const state = {
+      manifest: null,
+      segments: [],
+      currentIndex: 0,
+      isPlaying: false,
+      isLooping: false,
+      isContinuous: false,
+      rafId: null,
+      nudges: {} // sequence_index -> { start_offset_ms, end_offset_ms }
+    };
+
+    // DOM Elements
+    const audio = document.getElementById('audioElement');
+    const alertBox = document.getElementById('alertBox');
+    const segmentsList = document.getElementById('segmentsList');
+    const scrubber = document.getElementById('scrubber');
+    const timeCurrent = document.getElementById('timeCurrent');
+    const timeTotal = document.getElementById('timeTotal');
+    const activeBounds = document.getElementById('activeSegmentBounds');
+    const btnPlayPause = document.getElementById('btnPlayPause');
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const btnReplay = document.getElementById('btnReplay');
+    const btnLoop = document.getElementById('btnLoop');
+    const btnContinuous = document.getElementById('btnContinuous');
+
+    // Nudge buttons
+    const nudgeStartMinus = document.getElementById('nudgeStartMinus');
+    const nudgeStartPlus = document.getElementById('nudgeStartPlus');
+    const nudgeEndMinus = document.getElementById('nudgeEndMinus');
+    const nudgeEndPlus = document.getElementById('nudgeEndPlus');
+    const nudgeReset = document.getElementById('nudgeReset');
+
+    function showError(msg) {
+      alertBox.textContent = msg;
+      alertBox.style.display = 'block';
+    }
+
+    function formatTime(seconds) {
+      if (isNaN(seconds) || seconds < 0) seconds = 0;
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      const ms = Math.floor((seconds % 1) * 1000);
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+    }
+
+    function getSegmentEffectiveBounds(index) {
+      const seg = state.segments[index];
+      if (!seg) return { start_s: 0, end_s: 0, start_ms: 0, end_ms: 0 };
+      const seq = seg.sequence_index;
+      const nudge = state.nudges[seq] || { start_offset_ms: 0, end_offset_ms: 0 };
+
+      const start_ms = Math.max(0, seg.start_ms + nudge.start_offset_ms);
+      let end_ms = seg.end_ms + nudge.end_offset_ms;
+      if (audio.duration && !isNaN(audio.duration)) {
+        end_ms = Math.min(end_ms, Math.round(audio.duration * 1000));
+      }
+      return {
+        start_ms,
+        end_ms: Math.max(start_ms + 50, end_ms),
+        start_s: start_ms / 1000.0,
+        end_s: Math.max(start_ms + 50, end_ms) / 1000.0,
+      };
+    }
+
+    // Load Manifest
+    async function loadManifest() {
+      try {
+        const res = await fetch('/api/manifest');
+        if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to load manifest`);
+        const data = await res.json();
+        state.manifest = data;
+        state.segments = data.practice_segments || [];
+
+        // Update Meta UI
+        const meta = data.media_metadata || {};
+        document.getElementById('metaSource').textContent = data.source_file.split(/[\\/]/).pop();
+        document.getElementById('metaDuration').textContent = `${meta.duration_s.toFixed(2)}s`;
+        document.getElementById('metaTotal').textContent = state.segments.length;
+        document.getElementById('segmentStats').textContent = `${state.segments.length} segments loaded`;
+
+        renderSegments();
+        selectSegment(0, false);
+      } catch (err) {
+        showError(`Manifest load error: ${err.message}. Ensure the debug server is running.`);
+      }
+    }
+
+    function renderSegments() {
+      segmentsList.innerHTML = '';
+      state.segments.forEach((seg, idx) => {
+        const bounds = getSegmentEffectiveBounds(idx);
+        const card = document.createElement('div');
+        card.className = `seg-card ${idx === state.currentIndex ? 'active' : ''}`;
+        card.id = `seg-card-${idx}`;
+
+        const dur = ((bounds.end_ms - bounds.start_ms)).toLocaleString();
+
+        card.innerHTML = `
+          <div class="seg-idx">${String(seg.sequence_index).padStart(2, '0')}</div>
+          <div class="seg-timing">
+            <span class="seg-range">${(bounds.start_ms / 1000).toFixed(2)}s → ${(bounds.end_ms / 1000).toFixed(2)}s</span>
+            <span class="seg-duration">${dur} ms</span>
+          </div>
+          <div class="seg-text">${escapeHtml(seg.text)}</div>
+          <div class="seg-actions">
+            <button class="seg-play-btn" data-index="${idx}">▶ Play</button>
+          </div>
+        `;
+
+        card.addEventListener('click', (e) => {
+          selectSegment(idx, true);
+        });
+
+        segmentsList.appendChild(card);
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function selectSegment(index, autoPlay = false) {
+      if (index < 0 || index >= state.segments.length) return;
+      state.currentIndex = index;
+
+      // Update UI classes
+      document.querySelectorAll('.seg-card').forEach((el, i) => {
+        el.classList.toggle('active', i === index);
+      });
+
+      const card = document.getElementById(`seg-card-${index}`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      const bounds = getSegmentEffectiveBounds(index);
+      activeBounds.textContent = `[#${state.segments[index].sequence_index}] ${(bounds.start_ms / 1000).toFixed(3)}s → ${(bounds.end_ms / 1000).toFixed(3)}s (${bounds.end_ms - bounds.start_ms}ms)`;
+
+      audio.currentTime = bounds.start_s;
+      updateScrubber();
+
+      if (autoPlay) {
+        playActiveSegment();
+      } else {
+        pausePlayback();
+      }
+    }
+
+    function playActiveSegment() {
+      const bounds = getSegmentEffectiveBounds(state.currentIndex);
+      if (audio.currentTime < bounds.start_s || audio.currentTime >= bounds.end_s - 0.05) {
+        audio.currentTime = bounds.start_s;
+      }
+      audio.play().then(() => {
+        state.isPlaying = true;
+        btnPlayPause.textContent = '⏸ Pause Segment';
+        btnPlayPause.classList.add('active-toggle');
+        startBoundaryMonitor();
+      }).catch(err => {
+        showError(`Audio playback error: ${err.message}`);
+      });
+    }
+
+    function pausePlayback() {
+      audio.pause();
+      state.isPlaying = false;
+      btnPlayPause.textContent = '▶ Play Segment';
+      btnPlayPause.classList.remove('active-toggle');
+      if (state.rafId) cancelAnimationFrame(state.rafId);
+    }
+
+    function startBoundaryMonitor() {
+      if (state.rafId) cancelAnimationFrame(state.rafId);
+
+      function checkBoundary() {
+        if (!state.isPlaying) return;
+
+        const bounds = getSegmentEffectiveBounds(state.currentIndex);
+        updateScrubber();
+
+        if (audio.currentTime >= bounds.end_s) {
+          if (state.isLooping) {
+            // Loop back to segment start
+            audio.currentTime = bounds.start_s;
+            state.rafId = requestAnimationFrame(checkBoundary);
+          } else if (state.isContinuous && state.currentIndex + 1 < state.segments.length) {
+            // Move to next segment seamlessly
+            selectSegment(state.currentIndex + 1, true);
+          } else {
+            // Stop at segment boundary
+            audio.currentTime = bounds.end_s;
+            pausePlayback();
+            updateScrubber();
+          }
+          return;
+        }
+
+        state.rafId = requestAnimationFrame(checkBoundary);
+      }
+
+      state.rafId = requestAnimationFrame(checkBoundary);
+    }
+
+    function updateScrubber() {
+      timeCurrent.textContent = formatTime(audio.currentTime);
+      if (audio.duration && !isNaN(audio.duration)) {
+        scrubber.value = (audio.currentTime / audio.duration) * 100;
+        timeTotal.textContent = formatTime(audio.duration);
+      }
+    }
+
+    // Nudge Handlers
+    function applyNudge(startDelta, endDelta) {
+      const seg = state.segments[state.currentIndex];
+      if (!seg) return;
+      const seq = seg.sequence_index;
+      if (!state.nudges[seq]) {
+        state.nudges[seq] = { start_offset_ms: 0, end_offset_ms: 0 };
+      }
+      state.nudges[seq].start_offset_ms += startDelta;
+      state.nudges[seq].end_offset_ms += endDelta;
+
+      renderSegments();
+      selectSegment(state.currentIndex, true);
+    }
+
+    nudgeStartMinus.addEventListener('click', () => applyNudge(-50, 0));
+    nudgeStartPlus.addEventListener('click', () => applyNudge(50, 0));
+    nudgeEndMinus.addEventListener('click', () => applyNudge(0, -50));
+    nudgeEndPlus.addEventListener('click', () => applyNudge(0, 50));
+    nudgeReset.addEventListener('click', () => {
+      const seg = state.segments[state.currentIndex];
+      if (seg) delete state.nudges[seg.sequence_index];
+      renderSegments();
+      selectSegment(state.currentIndex, true);
+    });
+
+    // Control Handlers
+    btnPlayPause.addEventListener('click', () => {
+      if (state.isPlaying) {
+        pausePlayback();
+      } else {
+        playActiveSegment();
+      }
+    });
+
+    btnPrev.addEventListener('click', () => {
+      if (state.currentIndex > 0) selectSegment(state.currentIndex - 1, state.isPlaying);
+    });
+
+    btnNext.addEventListener('click', () => {
+      if (state.currentIndex + 1 < state.segments.length) selectSegment(state.currentIndex + 1, state.isPlaying);
+    });
+
+    btnReplay.addEventListener('click', () => {
+      const bounds = getSegmentEffectiveBounds(state.currentIndex);
+      audio.currentTime = bounds.start_s;
+      playActiveSegment();
+    });
+
+    btnLoop.addEventListener('click', () => {
+      state.isLooping = !state.isLooping;
+      btnLoop.classList.toggle('active-toggle', state.isLooping);
+      btnLoop.textContent = state.isLooping ? '🔁 Loop: ON' : '🔁 Loop: OFF';
+    });
+
+    btnContinuous.addEventListener('click', () => {
+      state.isContinuous = !state.isContinuous;
+      btnContinuous.classList.toggle('active-toggle', state.isContinuous);
+      btnContinuous.textContent = state.isContinuous ? '⏭ Continuous: ON' : '⏭ Continuous: OFF';
+    });
+
+    scrubber.addEventListener('input', (e) => {
+      if (audio.duration && !isNaN(audio.duration)) {
+        const targetTime = (e.target.value / 100) * audio.duration;
+        audio.currentTime = targetTime;
+        updateScrubber();
+      }
+    });
+
+    // Audio element metadata listener
+    audio.addEventListener('loadedmetadata', () => {
+      timeTotal.textContent = formatTime(audio.duration);
+    });
+    audio.addEventListener('error', () => {
+      showError('Audio load error: The browser failed to decode /api/audio. Check if whisper_working.wav exists.');
+    });
+
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        btnPlayPause.click();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        btnPrev.click();
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        btnNext.click();
+      } else if (e.code === 'KeyL') {
+        e.preventDefault();
+        btnLoop.click();
+      } else if (e.code === 'KeyR') {
+        e.preventDefault();
+        btnReplay.click();
+      }
+    });
+
+    // Start
+    loadManifest();
+  </script>
+</body>
+</html>

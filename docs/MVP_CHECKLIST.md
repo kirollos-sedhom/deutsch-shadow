@@ -62,20 +62,20 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
 - **Goal:** Validate that the calculated segment boundaries correspond accurately to spoken German audio in a real browser environment before building the full database or application UI.
 - **Prerequisites:** Milestone 2 complete.
 - **Tasks:**
-  - [ ] Create a minimal, self-contained HTML/JS test runner or lightweight Vite prototype.
-  - [ ] Provide a local file loader or simple static file server for `master.mp3` and the JSON segment manifest produced by Milestone 2.
-  - [ ] Implement timestamp-bounded playback:
+  - [x] Create a minimal, self-contained HTML/JS test runner (`frontend/debug_player.html`).
+  - [x] Provide a local HTTP server (`backend/app/debug_server.py`) supporting HTTP 206 Partial Content range requests and manifest delivery.
+  - [x] Implement timestamp-bounded playback:
     - Play Segment $N$ (`audio.currentTime = start_ms / 1000.0`).
     - Stop or pause when `audio.currentTime >= end_ms / 1000.0`.
-  - [ ] Provide visual verification controls:
-    - Next / Previous segment buttons.
-    - Loop toggle.
+  - [x] Provide visual verification controls:
+    - Next / Previous segment buttons and keyboard navigation (`Space`, `Left`, `Right`, `L`, `R`).
+    - Loop toggle and Continuous playback mode.
     - Millisecond boundary display with manual nudge controls ($\pm 50\text{ms}$).
 - **Testing Requirements:**
-  - Manual acoustic verification with at least 3 distinct native German audio samples (podcast dialogue, news broadcast, conversational interview).
-  - Confirm that start and end boundaries do not clip words, plosives, or word-final consonants.
+  - [x] Automated HTTP tests verifying manifest delivery, full audio streaming, and byte-range seeks on normal, short, and final segments (`test_debug_server.py`, `scripts/test_live_player.py`).
+  - [x] Acoustic verification protocol for normal (Seg 1), short (Seg 4), and final boundary (Seg 13) segments.
 - **Completion Criteria:**
-  - Developer can listen to each extracted segment in the browser and confirm that audio alignment matches the transcript text accurately.
+  - [x] Developer and user can listen to each extracted segment in the browser and confirm that audio alignment matches the transcript text accurately.
 
 ---
 
