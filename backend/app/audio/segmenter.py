@@ -70,8 +70,10 @@ class GermanSegmenter:
 
         # Convert word chunks into PracticeSegments with boundary padding
         practice_segments: List[PracticeSegment] = []
-        last_end_ms = 0
         max_allowed_ms = int(round(self.config.max_duration_s * 1000))
+        lead_in_ms = int(round(self.config.lead_in_padding_s * 1000))
+        tail_out_ms = int(round(self.config.tail_out_padding_s * 1000))
+        num_chunks = len(word_chunks)
 
         for seq_idx, chunk in enumerate(word_chunks):
             if not chunk:
@@ -84,21 +86,39 @@ class GermanSegmenter:
             raw_start_ms = first_word.start_ms
             raw_end_ms = last_word.end_ms
 
-            # Apply acoustic padding
-            lead_in_ms = int(round(self.config.lead_in_padding_s * 1000))
-            tail_out_ms = int(round(self.config.tail_out_padding_s * 1000))
-
+            # Initial acoustic padding
             padded_start_ms = max(0, raw_start_ms - lead_in_ms)
             padded_end_ms = raw_end_ms + tail_out_ms
 
-            # Clamp trailing boundary to media duration if provided
-            if media_duration_s is not None and media_duration_s > 0:
-                media_end_ms = int(round(media_duration_s * 1000))
-                padded_end_ms = min(padded_end_ms, media_end_ms)
+            # Constrain start boundary with respect to previous chunk
+            if seq_idx > 0 and practice_segments:
+                prev_raw_end = word_chunks[seq_idx - 1][-1].end_ms
+                if raw_start_ms >= prev_raw_end:
+                    midpoint = prev_raw_end + (raw_start_ms - prev_raw_end) // 2
+                else:
+                    midpoint = (prev_raw_end + raw_start_ms) // 2
+                min_start = max(practice_segments[-1].end_ms, midpoint)
+                padded_start_ms = max(padded_start_ms, min_start)
+                if padded_start_ms > raw_start_ms:
+                    padded_start_ms = raw_start_ms
 
-            # Prevent overlap with previous segment
-            if padded_start_ms < last_end_ms:
-                padded_start_ms = max(last_end_ms, raw_start_ms)
+            # Constrain end boundary with respect to next chunk
+            if seq_idx + 1 < num_chunks and word_chunks[seq_idx + 1]:
+                next_raw_start = word_chunks[seq_idx + 1][0].start_ms
+                if next_raw_start >= raw_end_ms:
+                    midpoint = raw_end_ms + (next_raw_start - raw_end_ms) // 2
+                else:
+                    midpoint = (raw_end_ms + next_raw_start) // 2
+                padded_end_ms = min(padded_end_ms, midpoint)
+                if padded_end_ms < raw_end_ms:
+                    padded_end_ms = raw_end_ms
+            else:
+                # Terminal chunk: clamp to media duration if provided
+                if media_duration_s is not None and media_duration_s > 0:
+                    media_end_ms = int(round(media_duration_s * 1000))
+                    padded_end_ms = min(padded_end_ms, media_end_ms)
+                    if padded_end_ms < raw_end_ms:
+                        padded_end_ms = min(raw_end_ms, media_end_ms)
 
             # Ensure start < end
             if padded_end_ms <= padded_start_ms:
@@ -139,7 +159,6 @@ class GermanSegmenter:
                 words=chunk,
             )
             practice_segments.append(segment)
-            last_end_ms = padded_end_ms
 
         return practice_segments
 

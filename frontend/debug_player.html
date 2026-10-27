@@ -23,12 +23,16 @@
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    html, body {
+      overflow-x: hidden;
+      width: 100%;
       background-color: var(--bg);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       line-height: 1.5;
-      padding: 1.5rem;
+    }
+    body {
+      padding: 1.25rem;
       min-height: 100vh;
     }
 
@@ -38,6 +42,7 @@
       display: flex;
       flex-direction: column;
       gap: 1.25rem;
+      width: 100%;
     }
 
     /* Header */
@@ -47,16 +52,24 @@
       align-items: center;
       padding-bottom: 1rem;
       border-bottom: 1px solid var(--card-border);
+      gap: 1rem;
+      flex-wrap: wrap;
     }
     .brand h1 {
-      font-size: 1.5rem;
+      font-size: 1.4rem;
       font-weight: 700;
       color: var(--primary);
       letter-spacing: -0.025em;
     }
     .brand p {
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       color: var(--text-muted);
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
     }
     .badge-milestone {
       background: #0284c7;
@@ -68,15 +81,46 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
+    .btn-file-label {
+      background: #334155;
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      padding: 0.45rem 0.8rem;
+      border-radius: 0.4rem;
+      font-weight: 600;
+      font-size: 0.8rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.15s ease;
+    }
+    .btn-file-label:hover {
+      background: #475569;
+      border-color: var(--primary);
+    }
+    .btn-file-label.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    .upload-status {
+      font-size: 0.8rem;
+      color: var(--warning);
+      font-family: var(--font-mono);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
 
     /* Error Alert */
     .alert {
       background: rgba(239, 68, 68, 0.15);
       border: 1px solid var(--danger);
       color: #fca5a5;
-      padding: 1rem;
+      padding: 0.9rem 1.1rem;
       border-radius: 0.5rem;
       display: none;
+      font-size: 0.9rem;
     }
 
     /* Metadata Bar */
@@ -91,7 +135,7 @@
       font-size: 0.85rem;
     }
     .meta-item { display: flex; flex-direction: column; }
-    .meta-label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; font-weight: 600; }
+    .meta-label { color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; font-weight: 600; }
     .meta-val { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
 
     /* Master Player Card */
@@ -118,6 +162,8 @@
       font-family: var(--font-mono);
       font-size: 0.8rem;
       color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: 0.3rem;
     }
     .current-time-display {
       color: var(--primary);
@@ -149,22 +195,23 @@
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: 1rem;
+      gap: 0.75rem;
     }
-    .btn-group { display: flex; align-items: center; gap: 0.5rem; }
+    .btn-group { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
     button {
       background: #334155;
       color: var(--text);
       border: 1px solid var(--card-border);
-      padding: 0.5rem 0.9rem;
+      padding: 0.5rem 0.85rem;
       border-radius: 0.4rem;
       font-weight: 600;
-      font-size: 0.85rem;
+      font-size: 0.83rem;
       cursor: pointer;
       transition: all 0.15s ease;
       display: inline-flex;
       align-items: center;
       gap: 0.4rem;
+      user-select: none;
     }
     button:hover { background: #475569; }
     button:active { transform: translateY(1px); }
@@ -179,30 +226,47 @@
       border-color: var(--primary);
       color: var(--primary);
     }
+    button.btn-reveal {
+      background: #1e3a5f;
+      border-color: #2563eb;
+      color: #bfdbfe;
+    }
+    button.btn-reveal:hover {
+      background: #2563eb;
+      color: #ffffff;
+    }
+    button.btn-reveal.revealed {
+      background: rgba(52, 211, 153, 0.15);
+      border-color: var(--success);
+      color: var(--success);
+    }
 
     /* Nudge Controls */
     .nudge-panel {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      font-size: 0.8rem;
+      gap: 0.4rem;
+      font-size: 0.78rem;
       background: #0f172a;
-      padding: 0.4rem 0.75rem;
+      padding: 0.4rem 0.65rem;
       border-radius: 0.4rem;
       border: 1px solid var(--card-border);
+      flex-wrap: wrap;
     }
     .nudge-label { color: var(--text-muted); font-weight: 600; }
-    .btn-nudge { padding: 0.2rem 0.5rem; font-size: 0.75rem; font-family: var(--font-mono); }
+    .btn-nudge { padding: 0.2rem 0.45rem; font-size: 0.75rem; font-family: var(--font-mono); }
 
     /* Segments List */
     .segments-section h2 {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 600;
       margin-bottom: 0.75rem;
       color: var(--text-muted);
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
     .segments-list {
       display: flex;
@@ -223,9 +287,9 @@
       border-radius: 0.5rem;
       padding: 0.75rem 1rem;
       display: grid;
-      grid-template-columns: 45px 160px 1fr 75px;
+      grid-template-columns: 42px 145px 1fr 140px;
       align-items: center;
-      gap: 1rem;
+      gap: 0.85rem;
       cursor: pointer;
       transition: all 0.15s ease;
       position: relative;
@@ -261,16 +325,38 @@
     }
     .seg-range { color: var(--primary); font-weight: 600; }
     .seg-duration { color: var(--text-muted); font-size: 0.7rem; }
+
+    /* Pedagogical Transcript Masking */
     .seg-text {
-      font-size: 0.95rem;
+      font-size: 0.93rem;
       color: var(--text);
-      line-height: 1.4;
+      line-height: 1.45;
+      transition: all 0.2s ease;
+      position: relative;
+      user-select: text;
     }
+    .seg-text.masked {
+      filter: blur(6px);
+      user-select: none;
+      cursor: pointer;
+      opacity: 0.65;
+    }
+    .seg-text.masked:hover {
+      opacity: 0.9;
+    }
+    .seg-text.revealed {
+      filter: none;
+      user-select: text;
+      opacity: 1;
+    }
+
     .seg-actions {
       display: flex;
       justify-content: flex-end;
+      align-items: center;
+      gap: 0.4rem;
     }
-    .seg-play-btn {
+    .seg-play-btn, .seg-reveal-btn {
       padding: 0.3rem 0.6rem;
       font-size: 0.75rem;
     }
@@ -284,6 +370,8 @@
       align-items: center;
       border-top: 1px solid var(--card-border);
       padding-top: 0.75rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
     .shortcut-key {
       background: #334155;
@@ -293,6 +381,62 @@
       font-family: var(--font-mono);
       font-weight: 600;
     }
+
+    /* Narrow Screen Layout Adaptation */
+    @media (max-width: 768px) {
+      body {
+        padding: 0.75rem;
+      }
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+      }
+      .header-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .meta-bar {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+        padding: 0.75rem;
+      }
+      .controls-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .btn-group {
+        justify-content: center;
+        width: 100%;
+      }
+      .nudge-panel {
+        justify-content: center;
+        width: 100%;
+      }
+      .seg-card {
+        grid-template-columns: 36px 1fr;
+        grid-template-areas:
+          "idx timing"
+          "text text"
+          "actions actions";
+        gap: 0.5rem;
+        padding: 0.75rem;
+      }
+      .seg-idx { grid-area: idx; align-self: start; }
+      .seg-timing { grid-area: timing; }
+      .seg-text { grid-area: text; }
+      .seg-actions {
+        grid-area: actions;
+        justify-content: flex-end;
+        width: 100%;
+      }
+      footer {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.4rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -300,11 +444,19 @@
     <header>
       <div class="brand">
         <h1>Deutsch Shadow — Debugging Player</h1>
-        <p>Acoustic segment boundary verification & listening test harness</p>
+        <p>Acoustic segment boundary verification & pedagogical shadowing harness</p>
       </div>
-      <span class="badge-milestone">Milestone 3</span>
+      <div class="header-actions">
+        <label class="btn-file-label" for="mediaFileInput" id="filePickerLabel" title="Select and process a local German audio/video recording">
+          📁 Import Media
+        </label>
+        <input type="file" id="mediaFileInput" accept="audio/*,video/*,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.webm,.mkv" style="display:none;">
+        <button id="btnResetSample" title="Reset back to default sample.mp4 recording">↺ Default Sample</button>
+        <span class="badge-milestone">Milestone 3</span>
+      </div>
     </header>
 
+    <div id="uploadStatusBox" class="upload-status" style="display: none;"></div>
     <div id="alertBox" class="alert"></div>
 
     <div class="meta-bar" id="metaBar">
@@ -353,6 +505,7 @@
         </div>
 
         <div class="btn-group">
+          <button id="btnRevealActive" class="btn-reveal" title="Toggle transcript masking for active segment (T)">👁 Reveal Transcript [T]</button>
           <button id="btnLoop" title="Loop current segment (L)">🔁 Loop: OFF</button>
           <button id="btnContinuous" title="Continuous playback mode">⏭ Continuous: OFF</button>
         </div>
@@ -362,7 +515,7 @@
           <span class="nudge-label">Start:</span>
           <button class="btn-nudge" id="nudgeStartMinus" title="Start 50ms earlier">-50ms</button>
           <button class="btn-nudge" id="nudgeStartPlus" title="Start 50ms later">+50ms</button>
-          <span class="nudge-label" style="margin-left: 0.5rem;">End:</span>
+          <span class="nudge-label" style="margin-left: 0.3rem;">End:</span>
           <button class="btn-nudge" id="nudgeEndMinus" title="End 50ms earlier">-50ms</button>
           <button class="btn-nudge" id="nudgeEndPlus" title="End 50ms later">+50ms</button>
           <button class="btn-nudge" id="nudgeReset" style="color: var(--warning);" title="Reset boundary adjustments">Reset</button>
@@ -373,15 +526,15 @@
     <!-- Practice Segments -->
     <section class="segments-section">
       <h2>
-        <span>Practice Segments</span>
+        <span>Practice Segments <small style="font-size:0.8rem; font-weight:normal;">(Masked by default for active listening)</small></span>
         <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);" id="segmentStats">Loading manifest...</span>
       </h2>
       <div class="segments-list" id="segmentsList"></div>
     </section>
 
     <footer>
-      <div>Keyboard Shortcuts: <span class="shortcut-key">Space</span> Play/Pause &bull; <span class="shortcut-key">←</span> <span class="shortcut-key">→</span> Prev/Next &bull; <span class="shortcut-key">L</span> Loop &bull; <span class="shortcut-key">R</span> Replay</div>
-      <div>Deutsch Shadow Local Debugger</div>
+      <div>Shortcuts: <span class="shortcut-key">Space</span> Play/Pause &bull; <span class="shortcut-key">←</span> <span class="shortcut-key">→</span> Prev/Next &bull; <span class="shortcut-key">R</span> Replay &bull; <span class="shortcut-key">T</span> Reveal/Hide Transcript &bull; <span class="shortcut-key">L</span> Loop</div>
+      <div>Deutsch Shadow &bull; Local-First Architecture</div>
     </footer>
   </div>
 
@@ -395,12 +548,14 @@
       isLooping: false,
       isContinuous: false,
       rafId: null,
-      nudges: {} // sequence_index -> { start_offset_ms, end_offset_ms }
+      nudges: {},     // sequence_index -> { start_offset_ms, end_offset_ms }
+      revealed: {}    // sequence_index -> boolean (default false: blind mode)
     };
 
     // DOM Elements
     const audio = document.getElementById('audioElement');
     const alertBox = document.getElementById('alertBox');
+    const uploadStatusBox = document.getElementById('uploadStatusBox');
     const segmentsList = document.getElementById('segmentsList');
     const scrubber = document.getElementById('scrubber');
     const timeCurrent = document.getElementById('timeCurrent');
@@ -412,30 +567,46 @@
     const btnReplay = document.getElementById('btnReplay');
     const btnLoop = document.getElementById('btnLoop');
     const btnContinuous = document.getElementById('btnContinuous');
+    const btnRevealActive = document.getElementById('btnRevealActive');
+    const mediaFileInput = document.getElementById('mediaFileInput');
+    const filePickerLabel = document.getElementById('filePickerLabel');
+    const btnResetSample = document.getElementById('btnResetSample');
 
-    // Nudge buttons
     const nudgeStartMinus = document.getElementById('nudgeStartMinus');
     const nudgeStartPlus = document.getElementById('nudgeStartPlus');
     const nudgeEndMinus = document.getElementById('nudgeEndMinus');
     const nudgeEndPlus = document.getElementById('nudgeEndPlus');
     const nudgeReset = document.getElementById('nudgeReset');
 
-    function showError(msg) {
-      alertBox.textContent = msg;
-      alertBox.style.display = 'block';
-    }
-
+    // Utility: Format seconds to MM:SS.mmm
     function formatTime(seconds) {
-      if (isNaN(seconds) || seconds < 0) seconds = 0;
+      if (isNaN(seconds) || seconds < 0) return '00:00.000';
       const m = Math.floor(seconds / 60);
       const s = Math.floor(seconds % 60);
       const ms = Math.floor((seconds % 1) * 1000);
       return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
     }
 
+    function showError(msg) {
+      alertBox.textContent = msg;
+      alertBox.style.display = 'block';
+      setTimeout(() => { alertBox.style.display = 'none'; }, 8000);
+    }
+
+    function showUploadStatus(msg, isSuccess = false) {
+      uploadStatusBox.textContent = msg;
+      uploadStatusBox.style.display = 'block';
+      uploadStatusBox.style.color = isSuccess ? 'var(--success)' : 'var(--warning)';
+      if (isSuccess) {
+        setTimeout(() => { uploadStatusBox.style.display = 'none'; }, 6000);
+      }
+    }
+
+    // Effective bounds considering nudges and duration clamps
     function getSegmentEffectiveBounds(index) {
       const seg = state.segments[index];
-      if (!seg) return { start_s: 0, end_s: 0, start_ms: 0, end_ms: 0 };
+      if (!seg) return { start_ms: 0, end_ms: 0, start_s: 0, end_s: 0 };
+
       const seq = seg.sequence_index;
       const nudge = state.nudges[seq] || { start_offset_ms: 0, end_offset_ms: 0 };
 
@@ -464,7 +635,7 @@
         // Update Meta UI
         const meta = data.media_metadata || {};
         document.getElementById('metaSource').textContent = data.source_file.split(/[\\/]/).pop();
-        document.getElementById('metaDuration').textContent = `${meta.duration_s.toFixed(2)}s`;
+        document.getElementById('metaDuration').textContent = `${(meta.duration_s || 0).toFixed(2)}s`;
         document.getElementById('metaTotal').textContent = state.segments.length;
         document.getElementById('segmentStats').textContent = `${state.segments.length} segments loaded`;
 
@@ -479,6 +650,9 @@
       segmentsList.innerHTML = '';
       state.segments.forEach((seg, idx) => {
         const bounds = getSegmentEffectiveBounds(idx);
+        const seq = seg.sequence_index;
+        const isRevealed = !!state.revealed[seq];
+
         const card = document.createElement('div');
         card.className = `seg-card ${idx === state.currentIndex ? 'active' : ''}`;
         card.id = `seg-card-${idx}`;
@@ -486,23 +660,47 @@
         const dur = ((bounds.end_ms - bounds.start_ms)).toLocaleString();
 
         card.innerHTML = `
-          <div class="seg-idx">${String(seg.sequence_index).padStart(2, '0')}</div>
+          <div class="seg-idx">${String(seq).padStart(2, '0')}</div>
           <div class="seg-timing">
             <span class="seg-range">${(bounds.start_ms / 1000).toFixed(2)}s → ${(bounds.end_ms / 1000).toFixed(2)}s</span>
             <span class="seg-duration">${dur} ms</span>
           </div>
-          <div class="seg-text">${escapeHtml(seg.text)}</div>
+          <div class="seg-text ${isRevealed ? 'revealed' : 'masked'}" id="seg-text-${idx}" title="Click text to reveal / mask transcript">
+            ${escapeHtml(seg.text)}
+          </div>
           <div class="seg-actions">
+            <button class="seg-reveal-btn" data-index="${idx}" title="Toggle reveal for this segment">
+              ${isRevealed ? '🙈 Hide' : '👁 Reveal'}
+            </button>
             <button class="seg-play-btn" data-index="${idx}">▶ Play</button>
           </div>
         `;
 
+        // Clicking the card selects the segment
         card.addEventListener('click', (e) => {
+          if (e.target.closest('.seg-reveal-btn') || e.target.closest('.seg-text')) {
+            return; // Handled separately
+          }
           selectSegment(idx, true);
+        });
+
+        // Clicking text toggles reveal without pausing
+        const textEl = card.querySelector(`#seg-text-${idx}`);
+        textEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleReveal(idx);
+        });
+
+        // Clicking reveal button toggles reveal without pausing
+        const revealBtn = card.querySelector('.seg-reveal-btn');
+        revealBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleReveal(idx);
         });
 
         segmentsList.appendChild(card);
       });
+      updateActiveRevealButton();
     }
 
     function escapeHtml(text) {
@@ -511,9 +709,55 @@
       return div.innerHTML;
     }
 
+    function toggleReveal(index) {
+      if (index < 0 || index >= state.segments.length) return;
+      const seq = state.segments[index].sequence_index;
+      state.revealed[seq] = !state.revealed[seq];
+
+      const textEl = document.getElementById(`seg-text-${index}`);
+      const cardEl = document.getElementById(`seg-card-${index}`);
+      if (textEl && cardEl) {
+        const isRev = !!state.revealed[seq];
+        textEl.classList.toggle('revealed', isRev);
+        textEl.classList.toggle('masked', !isRev);
+        const revBtn = cardEl.querySelector('.seg-reveal-btn');
+        if (revBtn) {
+          revBtn.textContent = isRev ? '🙈 Hide' : '👁 Reveal';
+        }
+      }
+      if (index === state.currentIndex) {
+        updateActiveRevealButton();
+      }
+    }
+
+    function updateActiveRevealButton() {
+      const seg = state.segments[state.currentIndex];
+      if (!seg) return;
+      const isRev = !!state.revealed[seg.sequence_index];
+      btnRevealActive.classList.toggle('revealed', isRev);
+      btnRevealActive.textContent = isRev ? '🙈 Hide Transcript [T]' : '👁 Reveal Transcript [T]';
+    }
+
     function selectSegment(index, autoPlay = false) {
       if (index < 0 || index >= state.segments.length) return;
+
+      const prevIndex = state.currentIndex;
       state.currentIndex = index;
+
+      // Pedagogical requirement: reset to hidden when navigating to another segment
+      if (prevIndex !== index && state.segments[index]) {
+        state.revealed[state.segments[index].sequence_index] = false;
+        const textEl = document.getElementById(`seg-text-${index}`);
+        const cardEl = document.getElementById(`seg-card-${index}`);
+        if (textEl) {
+          textEl.classList.remove('revealed');
+          textEl.classList.add('masked');
+        }
+        if (cardEl) {
+          const revBtn = cardEl.querySelector('.seg-reveal-btn');
+          if (revBtn) revBtn.textContent = '👁 Reveal';
+        }
+      }
 
       // Update UI classes
       document.querySelectorAll('.seg-card').forEach((el, i) => {
@@ -530,6 +774,7 @@
 
       audio.currentTime = bounds.start_s;
       updateScrubber();
+      updateActiveRevealButton();
 
       if (autoPlay) {
         playActiveSegment();
@@ -561,35 +806,49 @@
       if (state.rafId) cancelAnimationFrame(state.rafId);
     }
 
-    function startBoundaryMonitor() {
-      if (state.rafId) cancelAnimationFrame(state.rafId);
-
-      function checkBoundary() {
-        if (!state.isPlaying) return;
-
-        const bounds = getSegmentEffectiveBounds(state.currentIndex);
+    function handleSegmentReachedEnd(bounds) {
+      if (state.isLooping) {
+        audio.currentTime = bounds.start_s;
+        audio.play().catch(() => {});
+        state.rafId = requestAnimationFrame(checkBoundary);
+      } else if (state.isContinuous && state.currentIndex + 1 < state.segments.length) {
+        selectSegment(state.currentIndex + 1, true);
+      } else {
+        audio.pause();
+        state.isPlaying = false;
+        btnPlayPause.textContent = '▶ Play Segment';
+        btnPlayPause.classList.remove('active-toggle');
         updateScrubber();
+        if (state.rafId) cancelAnimationFrame(state.rafId);
+      }
+    }
 
-        if (audio.currentTime >= bounds.end_s) {
-          if (state.isLooping) {
-            // Loop back to segment start
-            audio.currentTime = bounds.start_s;
-            state.rafId = requestAnimationFrame(checkBoundary);
-          } else if (state.isContinuous && state.currentIndex + 1 < state.segments.length) {
-            // Move to next segment seamlessly
-            selectSegment(state.currentIndex + 1, true);
-          } else {
-            // Stop at segment boundary
-            audio.currentTime = bounds.end_s;
-            pausePlayback();
-            updateScrubber();
-          }
+    function checkBoundary() {
+      if (!state.isPlaying) return;
+
+      const bounds = getSegmentEffectiveBounds(state.currentIndex);
+      updateScrubber();
+
+      const isLastSegment = (state.currentIndex === state.segments.length - 1);
+      const isNearAudioEnd = audio.duration && !isNaN(audio.duration) && (bounds.end_s >= audio.duration - 0.06);
+
+      // Final sentence cut-off protection:
+      // If segment is at audio EOF, let audio play naturally to completion instead of abruptly cutting hardware buffers
+      if (isLastSegment || isNearAudioEnd) {
+        if (audio.ended || (audio.duration && audio.currentTime >= audio.duration - 0.005)) {
+          handleSegmentReachedEnd(bounds);
           return;
         }
-
-        state.rafId = requestAnimationFrame(checkBoundary);
+      } else if (audio.currentTime >= bounds.end_s) {
+        handleSegmentReachedEnd(bounds);
+        return;
       }
 
+      state.rafId = requestAnimationFrame(checkBoundary);
+    }
+
+    function startBoundaryMonitor() {
+      if (state.rafId) cancelAnimationFrame(state.rafId);
       state.rafId = requestAnimationFrame(checkBoundary);
     }
 
@@ -650,6 +909,10 @@
       playActiveSegment();
     });
 
+    btnRevealActive.addEventListener('click', () => {
+      toggleReveal(state.currentIndex);
+    });
+
     btnLoop.addEventListener('click', () => {
       state.isLooping = !state.isLooping;
       btnLoop.classList.toggle('active-toggle', state.isLooping);
@@ -674,8 +937,69 @@
     audio.addEventListener('loadedmetadata', () => {
       timeTotal.textContent = formatTime(audio.duration);
     });
+    audio.addEventListener('ended', () => {
+      const bounds = getSegmentEffectiveBounds(state.currentIndex);
+      handleSegmentReachedEnd(bounds);
+    });
     audio.addEventListener('error', () => {
       showError('Audio load error: The browser failed to decode /api/audio. Check if whisper_working.wav exists.');
+    });
+
+    // File Upload Handler
+    mediaFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      filePickerLabel.classList.add('disabled');
+      showUploadStatus(`⏳ Ingesting "${file.name}" with faster-whisper pipeline... please wait (10-25s)`);
+
+      try {
+        const res = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
+          method: 'POST',
+          body: file,
+          headers: {
+            'Content-Type': 'application/octet-stream'
+          }
+        });
+        const result = await res.json();
+        if (!res.ok || !result.success) {
+          throw new Error(result.error || `Upload failed with HTTP ${res.status}`);
+        }
+
+        showUploadStatus(`✓ Successfully processed "${result.source_file}" (${result.segments_count} segments)`, true);
+
+        // Reset state and reload audio & manifest
+        state.nudges = {};
+        state.revealed = {};
+        audio.src = `/api/audio?t=${Date.now()}`;
+        audio.load();
+        await loadManifest();
+      } catch (err) {
+        showError(`Upload processing failed: ${err.message}`);
+        uploadStatusBox.style.display = 'none';
+      } finally {
+        filePickerLabel.classList.remove('disabled');
+        mediaFileInput.value = '';
+      }
+    });
+
+    // Reset to Sample Handler
+    btnResetSample.addEventListener('click', async () => {
+      try {
+        showUploadStatus('↺ Resetting to default sample.mp4 recording...');
+        const res = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Reset failed');
+        state.nudges = {};
+        state.revealed = {};
+        audio.src = `/api/audio?t=${Date.now()}`;
+        audio.load();
+        await loadManifest();
+        showUploadStatus('✓ Restored default sample recording.', true);
+      } catch (err) {
+        showError(`Reset failed: ${err.message}`);
+        uploadStatusBox.style.display = 'none';
+      }
     });
 
     // Keyboard Shortcuts
@@ -697,6 +1021,9 @@
       } else if (e.code === 'KeyR') {
         e.preventDefault();
         btnReplay.click();
+      } else if (e.code === 'KeyT') {
+        e.preventDefault();
+        toggleReveal(state.currentIndex);
       }
     });
 

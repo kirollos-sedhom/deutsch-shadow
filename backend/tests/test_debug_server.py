@@ -117,6 +117,64 @@ class TestDebugPlayerServer(unittest.TestCase):
         except urllib.error.HTTPError as err:
             self.assertEqual(err.code, 404)
 
+    def test_options_cors_preflight(self):
+        """OPTIONS preflight must return 204 with CORS headers."""
+        req = urllib.request.Request(f"{self.base_url}/api/upload", method="OPTIONS")
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 204)
+            self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), "*")
+            self.assertIn("POST", resp.headers.get("Access-Control-Allow-Methods", ""))
+
+    def test_upload_empty_returns_400(self):
+        """POST /api/upload with empty body must return 400."""
+        req = urllib.request.Request(
+            f"{self.base_url}/api/upload?filename=test.mp3",
+            data=b"",
+            method="POST",
+            headers={"Content-Length": "0"},
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                self.assertEqual(resp.status, 400)
+        except urllib.error.HTTPError as err:
+            self.assertEqual(err.code, 400)
+            data = json.loads(err.read().decode("utf-8"))
+            self.assertIn("error", data)
+
+    def test_upload_invalid_extension_returns_400(self):
+        """POST /api/upload with unsupported file extension must return 400."""
+        fake_binary = b"not an audio file"
+        req = urllib.request.Request(
+            f"{self.base_url}/api/upload?filename=malicious.exe",
+            data=fake_binary,
+            method="POST",
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(len(fake_binary)),
+            },
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                self.assertEqual(resp.status, 400)
+        except urllib.error.HTTPError as err:
+            self.assertEqual(err.code, 400)
+            data = json.loads(err.read().decode("utf-8"))
+            self.assertIn("Unsupported file format", data["error"])
+
+    def test_reset_endpoint_returns_200(self):
+        """POST /api/reset must restore default manifest and return 200."""
+        req = urllib.request.Request(
+            f"{self.base_url}/api/reset",
+            data=b"{}",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertTrue(data["success"])
+            self.assertIn("Reset to default", data["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

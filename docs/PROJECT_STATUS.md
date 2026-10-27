@@ -12,7 +12,7 @@
 |---|---|:---:|---|---|
 | **1** | Initialize Git & Finalize Project Documentation | 🟢 **Completed** | None (Git initialized & verified) | Completed |
 | **2** | Build and Test Audio-Processing Pipeline | 🟢 **Completed** | Real-audio pipeline audited & verified | Completed |
-| **3** | Browser-Based Debugging Player | 🟢 **Completed** | Player UI & Range server verified | Completed |
+| **3** | Browser-Based Debugging Player & Usability Polish | 🟢 **Completed** | Player UI, blind mode, upload & fixes verified | Completed |
 | **4** | Database & Backend API | 🟡 **Ready to Start** | Awaiting approval to proceed | Milestone 4 |
 | **5** | Recording Library & Import Interface | ⚪ Planned | Depends on Milestone 4 | Milestone 5 |
 | **6** | Shadowing Player, Transcript Editing & Boundaries | ⚪ Planned | Depends on Milestone 5 | Milestone 6 |
@@ -45,30 +45,36 @@
      - `ctranslate2` (v4.8.4, official Windows x86_64 cp313 wheel)
      - `onnxruntime` (v1.31.1)
      - `tokenizers` (v0.23.3)
-     - `av` (v19.0.2)
+     - `av` (v17.1.0 pinned)
 3. **Hardware Acceleration & Compute Type:**
-   - *Confirmed Configuration:* CPU inference with `faster-whisper`, `compute_type="int8"`, and 4 to 6 worker threads. This leverages the Ryzen 5 2600's 12 threads efficiently while leaving headroom for system responsiveness.
-4. **Automated Test Results (Milestone 2 Verified):**
-   - **20/20 tests passing** in `backend/tests/` using `.venv` Python.
-5. **Real-Audio Integration Test Results (Final Audit Verified):**
+   - *Confirmed Configuration:* CPU inference with `faster-whisper`, `compute_type="int8"`, and 4 worker threads.
+4. **Automated Test Results:**
+   - **33/33 tests passing** in `backend/tests/` across unit and integration suites.
+5. **Real-Audio Integration Test Results (Audited & Verified):**
    - **Input Recording:** `data/sample.mp4` (54.288s, AAC stereo 44.1kHz, with video).
    - **Status:** **PASSED** (Exit code `0`).
    - **Model Configuration:** `faster-whisper-base`, CPU inference, `int8` quantization, 4 worker threads.
-   - **Inference Runtime:** 30.07 seconds.
-   - **Speech Recognition:** Language detected as German (`de`, $p=1.00$), 141 total words recognized.
-   - **Segmentation Results:** Generated 13 practice segments.
-   - **Final Audit Fixes & Verification:**
-     - **Strict Duration Limit:** Enforced `max_duration_s = 7.0s` on the final playable segment (including acoustic padding). All 13 segments strictly obey $\text{duration\_ms} \le 7000\text{ms}$ (longest segment: 6,940ms).
-     - **Media Boundary Clamping:** Clamped trailing segment end to exact media duration ($54,288\text{ms}$). Segment 13 ends at exactly $54,288\text{ms}$, preventing boundary overshoot.
-     - **Non-Overlapping Integrity:** Verified $\text{start\_ms}_{k} \ge \text{end\_ms}_{k-1}$ for all segments.
-     - **Manifest Validation Audit:** Validated via `scripts/verify_manifest.py` with 0 errors and 0 warnings (Exit code `0`).
-     - **Automated Regression Suite:** 22/22 unit and integration tests passing (`backend/tests/`).
-6. **Milestone 3 Debugging Player Results (Verified):**
-   - **Player Interface:** `frontend/debug_player.html` (zero-CDN, responsive HTML5 player with timeline scrubber, bounded segment playback, active highlighting, loop toggle, continuous mode, and millisecond nudge controls).
-   - **Streaming Server:** `backend/app/debug_server.py` implementing HTTP 206 Partial Content byte ranges for smooth browser audio seeking without file slicing.
-   - **Verification:** Verified live range seeking on normal segment (Seg 01), short segment (Seg 04: 300ms), and final boundary segment (Seg 13).
-   - **Automated Test Suite:** **29/29 tests passing** in `backend/tests/` (including 7 debug server tests).
-   - **Live Integration:** Verified via `scripts/test_live_player.py` with exit code `0`.
+   - **Speech Recognition:** Language detected as German (`de`, $p=1.00$), 141 total words recognized, 13 segments generated.
+   - **Boundary & Duration Verification:** Validated via `scripts/verify_manifest.py` with 0 errors and 0 warnings (Exit code `0`).
+6. **Milestone 3 Usability Fixes & Enhancements (Verified):**
+   - **Final Sentence Cut-Off Audit & Root Cause:**
+     - *Source File Truncation:* In `data/sample.mp4`, the speaker was saying *"beschädigt"*, but the source video cuts off abruptly at exactly `54.288s` mid-word, leaving Whisper to predict *"beschrieben."* with low confidence ($p=0.45$).
+     - *Segmenter Padding Overlap Fix:* Segment 12 had tail padding extending to `53360ms`, which pushed Segment 13's start to `53360ms` and truncated the first syllable of *"Explosionen"*. Fixed `segmenter.py` to partition silence gaps without ever pushing a segment's start past its first word. Segment 13 now starts cleanly at `53280ms`.
+     - *Browser Playback Stop Logic:* Prevented HTML5 `<audio>` from cutting off hardware output buffers early on terminal segments by allowing audio to play to `ended` event / media duration.
+   - **Pedagogical Blind Mode (Transcript Masking):**
+     - All segment transcripts default to blurred/masked mode (`filter: blur(6px)` with placeholder cursor).
+     - Per-segment toggle via click or inline button; global toggle button in active controls bar (`👁 Reveal Transcript [T]`).
+     - Navigating to another segment automatically resets the transcript to masked for focused listening.
+     - Toggling reveal does not pause or interrupt audio playback.
+   - **Media Import & Upload Interface:**
+     - Added client-side file picker (`<input type="file">`) and `↺ Default Sample` reset button.
+     - Server implements `POST /api/upload` (supporting binary stream and multipart) saving into isolated `data/uploads/<stem>_<timestamp>/` folders and running `AudioPipeline.process()`.
+     - Added `POST /api/reset` to restore `data/real_audio_test/manifest.json`.
+   - **Narrow-Screen Layout:**
+     - Added responsive CSS (`@media (max-width: 768px)`) with stacked cards, wrapped controls, and `overflow-x: hidden` preventing page scrolling.
+   - **Automated Test Suite:**
+     - Expanded to **33 tests** in `backend/tests/` covering file uploads, CORS preflight, resets, range requests, duration clamping, and segmentation. All pass in ~3.5s.
+   - **Live Development Server:** Running at `http://127.0.0.1:8080`.
 
 ---
 
