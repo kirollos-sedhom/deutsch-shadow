@@ -51,6 +51,12 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const segmentStopTimeoutRef = useRef<number | null>(null);
+  const activeSegmentIdRef = useRef<string | null>(null);
+
+  // Keep ref synchronized with state
+  useEffect(() => {
+    activeSegmentIdRef.current = activeSegmentId;
+  }, [activeSegmentId]);
 
   // Load project & segments
   const fetchProjectData = useCallback(async () => {
@@ -167,41 +173,115 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeSegmentId, isBlindMode]);
 
-  // Play specific segment
-  const playSegment = (segment: SegmentRead) => {
-    if (!audioRef.current) return;
-
+  // Helper to clear segment stop timeout
+  const clearSegmentStopTimer = () => {
     if (segmentStopTimeoutRef.current) {
       window.clearTimeout(segmentStopTimeoutRef.current);
       segmentStopTimeoutRef.current = null;
     }
+  };
 
+  // Helper to stop active segment playback at boundary or manual reset
+  const stopActiveSegmentPlayback = (endTimeSec?: number) => {
+    clearSegmentStopTimer();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      if (endTimeSec !== undefined) {
+        audioRef.current.currentTime = endTimeSec;
+      }
+    }
+    setIsPlaying(false);
+    setActiveSegmentId(null);
+    activeSegmentIdRef.current = null;
+  };
+
+  // Play / pause / resume specific segment
+  const togglePlaySegment = (segment: SegmentRead) => {
+    if (!audioRef.current) return;
+    const audio = audioRef.current;
     const startTimeSec = segment.start_time_ms / 1000;
     const endTimeSec = segment.end_time_ms / 1000;
-    const durationSec = Math.max(0.1, endTimeSec - startTimeSec);
 
-    audioRef.current.currentTime = startTimeSec;
-    audioRef.current.play().then(() => {
+    // Case 1: Clicking the currently playing segment -> PAUSE at current position
+    if (activeSegmentId === segment.id && isPlaying) {
+      clearSegmentStopTimer();
+      audio.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    // Clear any previous timer before starting or resuming
+    clearSegmentStopTimer();
+
+    // Determine target playback start position:
+    // Case 2: Resuming the same paused segment if currentTime is still within boundaries
+    let targetTime = startTimeSec;
+    if (activeSegmentId === segment.id && !isPlaying) {
+      if (audio.currentTime >= startTimeSec && audio.currentTime < endTimeSec) {
+        targetTime = audio.currentTime;
+      }
+    }
+
+    // Set audio position and calculate remaining duration
+    audio.currentTime = targetTime;
+    const remainingMs = Math.max(50, (endTimeSec - targetTime) * 1000);
+
+    audio.play().then(() => {
       setActiveSegmentId(segment.id);
+      activeSegmentIdRef.current = segment.id;
       setIsPlaying(true);
 
+      // Boundary timer: stop automatically when reaching segment end
       segmentStopTimeoutRef.current = window.setTimeout(() => {
-        if (audioRef.current) {
-          audioRef.current.pause();
-          setIsPlaying(false);
-          setActiveSegmentId(null);
+        if (activeSegmentIdRef.current === segment.id) {
+          stopActiveSegmentPlayback(endTimeSec);
         }
-      }, durationSec * 1000);
+      }, remainingMs);
     }).catch((e) => {
       console.error('Audio play error:', e);
     });
   };
 
+  // Time update listener enforcing boundaries and updating display
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
+    if (!audioRef.current) return;
+    const current = audioRef.current.currentTime;
+    setCurrentTime(current);
+
+    // Active segment boundary enforcement
+    if (activeSegmentIdRef.current) {
+      const activeSeg = segments.find((s) => s.id === activeSegmentIdRef.current);
+      if (activeSeg) {
+        const endTimeSec = activeSeg.end_time_ms / 1000;
+        if (current >= endTimeSec) {
+          stopActiveSegmentPlayback(endTimeSec);
+        }
+      }
     }
   };
+
+  const handleAudioPause = () => {
+    clearSegmentStopTimer();
+    setIsPlaying(false);
+  };
+
+  const handleAudioPlay = () => {
+    setIsPlaying(true);
+  };
+
+  const handleAudioEnded = () => {
+    stopActiveSegmentPlayback();
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearSegmentStopTimer();
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, []);
 
   if (isLoading) {
     return (
@@ -346,8 +426,9 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               controls
               className="audio-element"
               onTimeUpdate={handleTimeUpdate}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
+              onPlay={handleAudioPlay}
+              onPause={handleAudioPause}
+              onEnded={handleAudioEnded}
             />
           </div>
 
@@ -427,11 +508,15 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
                       <button
                         className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => playSegment(segment)}
-                        aria-label={`Play clip #${segment.sequence_index + 1}`}
+                        onClick={() => togglePlaySegment(segment)}
+                        aria-label={
+                          isActive && isPlaying
+                            ? `Pause clip #${segment.sequence_index + 1}`
+                            : `Play clip #${segment.sequence_index + 1}`
+                        }
                       >
                         {isActive && isPlaying ? <Pause size={12} /> : <Play size={12} />}
-                        <span>{isActive && isPlaying ? 'Playing' : 'Play'}</span>
+                        <span>{isActive && isPlaying ? 'Pause' : 'Play'}</span>
                       </button>
                     </div>
                   </div>

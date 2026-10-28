@@ -645,15 +645,32 @@ a:hover {
 .detail-nav-back {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
   color: var(--text-secondary);
+  font-family: inherit;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   width: fit-content;
-  min-height: 38px;
+  min-height: var(--touch-target-min);
+  line-height: 1.2;
+  transition: all 0.12s ease-in-out;
+  user-select: none;
 }
+
 .detail-nav-back:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-focus);
   color: var(--text-primary);
+}
+
+.detail-nav-back:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 .detail-title-row {

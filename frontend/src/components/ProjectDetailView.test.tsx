@@ -189,4 +189,126 @@ describe('ProjectDetailView Component & Blind Mode', () => {
     fireEvent.keyDown(window, { key: 't' });
     expect(transcriptEl1).toHaveClass('masked');
   });
+
+  it('renders styled Back to Library button and calls onBack when clicked', async () => {
+    const onBack = vi.fn();
+    render(
+      <ProjectDetailView
+        projectId="proj-test-1"
+        onBack={onBack}
+        onDelete={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Back to Library')).toBeInTheDocument();
+    });
+
+    const backBtn = screen.getByRole('button', { name: /Back to Library/i });
+    expect(backBtn).toHaveClass('detail-nav-back');
+    fireEvent.click(backBtn);
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles segment play, pause without seeking back, resume, and switching segments', async () => {
+    const playSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const pauseSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+    render(
+      <ProjectDetailView
+        projectId="proj-test-1"
+        onBack={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Audio Project')).toBeInTheDocument();
+    });
+
+    const playBtnSeg1 = screen.getByRole('button', { name: /Play clip #1/i });
+    const audioEl = document.querySelector('audio') as HTMLAudioElement;
+    expect(audioEl).toBeInTheDocument();
+
+    // 1. Initial Play: starts segment 1 at start_time_ms (1000ms = 1.0s)
+    fireEvent.click(playBtnSeg1);
+    await waitFor(() => {
+      expect(playSpy).toHaveBeenCalled();
+      expect(audioEl.currentTime).toBe(1.0);
+    });
+
+    const pauseBtnSeg1 = screen.getByRole('button', { name: /Pause clip #1/i });
+    expect(pauseBtnSeg1).toHaveTextContent('Pause');
+
+    // 2. Pause while playing: simulate playback advancing to 2.5s and clicking Pause
+    audioEl.currentTime = 2.5;
+    fireEvent.click(pauseBtnSeg1);
+
+    expect(pauseSpy).toHaveBeenCalled();
+    // It must NOT seek back to the beginning!
+    expect(audioEl.currentTime).toBe(2.5);
+
+    // Button reverts to Play
+    const resumeBtnSeg1 = screen.getByRole('button', { name: /Play clip #1/i });
+    expect(resumeBtnSeg1).toHaveTextContent('Play');
+
+    // 3. Resume: clicking again resumes from 2.5s
+    fireEvent.click(resumeBtnSeg1);
+    await waitFor(() => {
+      expect(audioEl.currentTime).toBe(2.5);
+    });
+
+    // 4. Switching segments: clicking segment 2 stops segment 1 and starts segment 2 from start boundary (4800ms = 4.8s)
+    const playBtnSeg2 = screen.getByRole('button', { name: /Play clip #2/i });
+    fireEvent.click(playBtnSeg2);
+
+    await waitFor(() => {
+      expect(audioEl.currentTime).toBe(4.8);
+      expect(screen.getByRole('button', { name: /Pause clip #2/i })).toBeInTheDocument();
+    });
+
+    // Segment 1 button is reset to stopped Play state
+    expect(screen.getByRole('button', { name: /Play clip #1/i })).toBeInTheDocument();
+  });
+
+  it('stops playback and resets button state when segment reaches end boundary', async () => {
+    const playSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const pauseSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+    render(
+      <ProjectDetailView
+        projectId="proj-test-1"
+        onBack={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Audio Project')).toBeInTheDocument();
+    });
+
+    const playBtnSeg1 = screen.getByRole('button', { name: /Play clip #1/i });
+    const audioEl = document.querySelector('audio') as HTMLAudioElement;
+
+    // Start playback
+    fireEvent.click(playBtnSeg1);
+    await waitFor(() => {
+      expect(playSpy).toHaveBeenCalled();
+    });
+
+    expect(screen.getByRole('button', { name: /Pause clip #1/i })).toBeInTheDocument();
+
+    // Advance audio position past segment 1 end boundary (4500ms = 4.5s)
+    audioEl.currentTime = 4.5;
+    fireEvent.timeUpdate(audioEl);
+
+    // Audio should be paused and clamped to end time
+    expect(pauseSpy).toHaveBeenCalled();
+    expect(audioEl.currentTime).toBe(4.5);
+
+    // Button should be reset back to stopped Play state
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Play clip #1/i })).toBeInTheDocument();
+    });
+  });
 });
