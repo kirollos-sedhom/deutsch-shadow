@@ -1324,3 +1324,186 @@ a:hover {
   }
 }
 
+/* ==========================================================================
+   Milestone 6 Phase 2: Transcript Editing & Boundary Adjustment
+   ========================================================================== */
+
+.player-edited-tag {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-base);
+  margin-left: 6px;
+}
+
+.player-edit-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.player-edit-textarea {
+  width: 100%;
+  background-color: var(--bg-main);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 18px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 80px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.player-edit-textarea:focus {
+  border-color: var(--border-focus);
+}
+
+.player-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.player-edit-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fca5a5;
+  font-size: 12px;
+  background-color: var(--danger-subtle);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.player-bounds-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: transparent;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  min-height: 32px;
+  transition: all 0.12s ease;
+}
+
+.player-bounds-toggle-btn:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.player-bounds-toggle-btn.active {
+  background-color: rgba(56, 189, 248, 0.12);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.player-bounds-drawer {
+  width: 100%;
+  background-color: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-bounds-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.player-bounds-label-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 130px;
+}
+
+.player-bounds-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.player-bounds-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--primary);
+}
+
+.player-nudge-group {
+  display: flex;
+  gap: 4px;
+}
+
+.player-nudge-btn {
+  min-height: var(--touch-target-min);
+  min-width: 44px;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.player-nudge-btn:hover:not(:disabled) {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.player-nudge-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.player-bounds-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid rgba(51, 65, 85, 0.4);
+}
+
+.player-bounds-duration {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.player-bounds-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+

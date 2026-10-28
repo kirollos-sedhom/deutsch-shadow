@@ -155,24 +155,29 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
     - Pedagogical transcript masking by default, tap-to-reveal, toggle button, and predictable re-masking on clip navigation.
     - Ergonomic keyboard shortcuts (`Space`, `R`, `T`, `Left`, `Right`, `Esc`) with strict input/form element isolation.
     - Overview integration: "Start Shadowing" header action and per-clip "Shadow" button, with scroll and selection preservation on return.
-  - [ ] Build **Transcript In-Place Editor (Phase 2)**:
-    - Double-click or edit button to correct transcript text.
-    - Save changes back to SQLite via `PATCH /api/segments/{id}`.
-  - [ ] Build **Segment Boundary Adjustment UI (Phase 2)**:
-    - Start and end time nudge buttons ($\pm 25\text{ms}$, $\pm 100\text{ms}$).
-    - Split segment action (at playhead position).
-    - Merge with next / previous segment action.
+  - [x] Build **Transcript In-Place Editor (Phase 2 Verified)**:
+    - In-place German transcript text editor in `ShadowingPlayer`.
+    - Save changes back to SQLite via `PATCH /api/segments/{id}` with `is_edited = true`.
+    - Whitespace/empty text validation, Cancel draft discarding, and error preservation.
+    - Synchronized with project overview clip list on return.
+  - [x] Build **Segment Boundary Adjustment UI (Phase 2 Verified)**:
+    - Expandable boundary drawer with touch-friendly nudge buttons ($\pm 25\text{ms}$, $\pm 100\text{ms}$).
+    - Enforced invariants: non-negative start, $\ge 100\text{ms}$ duration, neighbor collision prevention, and media duration ceiling.
+    - Touching adjacent segments allowed ($\text{gap} = 0$) without imposing artificial gaps.
+    - Real-time acoustic boundary preview before saving.
+    - Atomic database validation and persistence; failure preserves draft.
 - **Testing Requirements:**
   - Frontend component tests (Vitest / React Testing Library):
-    - [x] `src/components/ShadowingPlayer.test.tsx` (10 unit/integration tests covering play/pause/resume, replay, boundaries, speed, navigation, blind mode, shortcuts, typing isolation, and exit).
-    - [x] `src/components/ProjectDetailView.test.tsx` (10 component tests covering blind listening, segment playback, Start Shadowing entry, and overview return).
-    - [x] Total frontend suite: **28/28 tests passing**.
+    - [x] `src/components/ShadowingPlayer.test.tsx` (19 unit/integration tests covering playback, boundaries, navigation, speed, blind mode, text editing, draft cancellation, boundary nudges, limits, preview, and failure recovery).
+    - [x] `src/components/ProjectDetailView.test.tsx` (11 component tests covering blind listening, segment playback, overview return, and edited segment synchronization).
+    - [x] Total frontend suite: **38/38 tests passing**.
     - [x] Production build & TypeScript check (`tsc && vite build`): **0 errors**.
   - Backend integration tests:
-    - [x] Backend test suite: **41/41 tests passing**.
+    - [x] `backend/tests/test_segment_editing.py` (10 tests covering duration $\ge 100\text{ms}$, non-negative start, overlap rejection, touching segments, text edits, and project duration limits).
+    - [x] Total backend test suite: **51/51 tests passing**.
 - **Completion Criteria:**
   - [x] Phase 1 Core Player: User can seamlessly practice individual clips in a dedicated mobile-first player with speed adjustment, blind listening, keyboard navigation, and return to project overview.
-  - [ ] Phase 2: In-player transcript editing and boundary nudging.
+  - [x] Phase 2: In-player transcript editing and boundary nudging with acoustic preview and atomic validation.
 
 ---
 

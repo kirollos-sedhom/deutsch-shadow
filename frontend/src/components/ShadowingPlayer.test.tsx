@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ShadowingPlayer } from './ShadowingPlayer';
-import { SegmentRead } from '../api/client';
+import { SegmentRead, updateSegment } from '../api/client';
+
+vi.mock('../api/client', async () => {
+  const actual = await vi.importActual<typeof import('../api/client')>('../api/client');
+  return {
+    ...actual,
+    updateSegment: vi.fn(),
+  };
+});
 
 const mockSegments: SegmentRead[] = [
   {
@@ -368,5 +376,282 @@ describe('ShadowingPlayer Component', () => {
     const backBtn = screen.getByRole('button', { name: /Back to project overview/i });
     fireEvent.click(backBtn);
     expect(onExit).toHaveBeenCalledWith(1);
+  });
+
+  /* =========================================================================
+     Milestone 6 Phase 2 Tests: Transcript Editing & Boundary Adjustment
+     ========================================================================= */
+
+  it('edits German transcript text, calls updateSegment, updates display and shows edited tag', async () => {
+    const onSegmentUpdate = vi.fn();
+    const updatedSeg1: SegmentRead = {
+      ...mockSegments[0],
+      text: 'Guten Tag, wie geht es Ihnen heute? (korrigiert)',
+      is_edited: true,
+    };
+    vi.mocked(updateSegment).mockResolvedValue(updatedSeg1);
+
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={0}
+        onExit={vi.fn()}
+        onSegmentUpdate={onSegmentUpdate}
+      />
+    );
+
+    // Click Edit Text button
+    const editBtn = screen.getByRole('button', { name: /Edit transcript text/i });
+    fireEvent.click(editBtn);
+
+    // Form appears with textarea
+    const textarea = screen.getByRole('textbox', { name: /Edit German transcript/i });
+    expect(textarea).toHaveValue('Guten Tag, wie geht es Ihnen heute?');
+
+    // Type updated text
+    fireEvent.change(textarea, { target: { value: 'Guten Tag, wie geht es Ihnen heute? (korrigiert)' } });
+
+    // Click Save Text
+    const saveBtn = screen.getByRole('button', { name: /Save transcript/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(updateSegment).toHaveBeenCalledWith('seg-1', {
+        text: 'Guten Tag, wie geht es Ihnen heute? (korrigiert)',
+      });
+      expect(onSegmentUpdate).toHaveBeenCalledWith(updatedSeg1);
+      expect(screen.getByText('Guten Tag, wie geht es Ihnen heute? (korrigiert)')).toBeInTheDocument();
+      expect(screen.getByText('Edited')).toBeInTheDocument();
+    });
+  });
+
+  it('cancels transcript editing and discards local draft', () => {
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={0}
+        onExit={vi.fn()}
+      />
+    );
+
+    const editBtn = screen.getByRole('button', { name: /Edit transcript text/i });
+    fireEvent.click(editBtn);
+
+    const textarea = screen.getByRole('textbox', { name: /Edit German transcript/i });
+    fireEvent.change(textarea, { target: { value: 'Completely different uncommitted text' } });
+
+    // Click Cancel
+    const cancelBtn = screen.getByRole('button', { name: /Cancel editing/i });
+    fireEvent.click(cancelBtn);
+
+    // Edit form closed and original text displayed
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByText('Guten Tag, wie geht es Ihnen heute?')).toBeInTheDocument();
+  });
+
+  it('disallows saving empty or whitespace-only transcript text', async () => {
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={0}
+        onExit={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit transcript text/i }));
+    const textarea = screen.getByRole('textbox', { name: /Edit German transcript/i });
+    fireEvent.change(textarea, { target: { value: '   ' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Save transcript/i });
+    expect(saveBtn).toBeDisabled();
+    expect(updateSegment).not.toHaveBeenCalled();
+  });
+
+  it('preserves draft text and displays error banner when text save fails', async () => {
+    vi.mocked(updateSegment).mockRejectedValue(new Error('Database lock error'));
+
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={0}
+        onExit={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit transcript text/i }));
+    const textarea = screen.getByRole('textbox', { name: /Edit German transcript/i });
+    fireEvent.change(textarea, { target: { value: 'Draft with network glitch' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Save transcript/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Database lock error')).toBeInTheDocument();
+      // Form must remain open and draft preserved!
+      expect(screen.getByRole('textbox')).toHaveValue('Draft with network glitch');
+    });
+  });
+
+  it('toggles boundary adjustment drawer, nudges boundaries, and respects limits', async () => {
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={1} // Seg 2: start=4800, end=8200. Prev seg end=4500. Next seg start=8500.
+        onExit={vi.fn()}
+      />
+    );
+
+    // Open boundary drawer
+    const adjustBtn = screen.getByRole('button', { name: /Toggle boundary adjustment drawer/i });
+    fireEvent.click(adjustBtn);
+
+    expect(screen.getByTestId('bounds-drawer')).toBeInTheDocument();
+
+    // Nudge start back 100ms: 4800 -> 4700ms (min floor is 4500ms, so 4700 is valid)
+    const nudgeStartBack100 = screen.getByRole('button', { name: /Nudge start back 100ms/i });
+    fireEvent.click(nudgeStartBack100);
+    expect(screen.getByText('00:04.700')).toBeInTheDocument();
+
+    // Nudge end forward 100ms: 8200 -> 8300ms (max ceiling is 8500ms, so 8300 is valid)
+    const nudgeEndFwd100 = screen.getByRole('button', { name: /Nudge end forward 100ms/i });
+    fireEvent.click(nudgeEndFwd100);
+    expect(screen.getByText('00:08.300')).toBeInTheDocument();
+
+    // Duration is now: 8300 - 4700 = 3600ms = 3.60s
+    expect(screen.getByText('Duration: 3.60s')).toBeInTheDocument();
+  });
+
+  it('previews draft boundaries in audio element before saving', async () => {
+    const playSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={1} // Seg 2: start 4800ms = 4.8s
+        onExit={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Toggle boundary adjustment drawer/i }));
+
+    // Nudge start back 100ms to 4700ms (4.7s)
+    fireEvent.click(screen.getByRole('button', { name: /Nudge start back 100ms/i }));
+
+    const audioEl = document.querySelector('audio') as HTMLAudioElement;
+
+    // Click Preview
+    const previewBtn = screen.getByRole('button', { name: /Preview draft boundaries/i });
+    fireEvent.click(previewBtn);
+
+    await waitFor(() => {
+      expect(playSpy).toHaveBeenCalled();
+      // Audio currentTime set to draft start (4.7s)
+      expect(audioEl.currentTime).toBe(4.7);
+    });
+  });
+
+  it('resets boundary adjustments to persisted values on reset click', () => {
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={1} // Seg 2: start 4800ms
+        onExit={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Toggle boundary adjustment drawer/i }));
+
+    // Nudge start
+    fireEvent.click(screen.getByRole('button', { name: /Nudge start back 100ms/i }));
+    expect(screen.getByText('00:04.700')).toBeInTheDocument();
+
+    // Click Reset
+    const resetBtn = screen.getByRole('button', { name: /Reset boundaries to saved values/i });
+    expect(resetBtn).not.toBeDisabled();
+    fireEvent.click(resetBtn);
+
+    // Reverted back to 4800ms (00:04.800)
+    expect(screen.getByText('00:04.800')).toBeInTheDocument();
+    expect(resetBtn).toBeDisabled();
+  });
+
+  it('saves boundary adjustments, calls onSegmentUpdate, and updates boundaries', async () => {
+    const onSegmentUpdate = vi.fn();
+    const updatedSeg2: SegmentRead = {
+      ...mockSegments[1],
+      start_time_ms: 4700,
+      end_time_ms: 8300,
+      duration_ms: 3600,
+      is_edited: true,
+    };
+    vi.mocked(updateSegment).mockResolvedValue(updatedSeg2);
+
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={1}
+        onExit={vi.fn()}
+        onSegmentUpdate={onSegmentUpdate}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Toggle boundary adjustment drawer/i }));
+
+    // Nudge start to 4700ms and end to 8300ms
+    fireEvent.click(screen.getByRole('button', { name: /Nudge start back 100ms/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Nudge end forward 100ms/i }));
+
+    // Click Save Bounds
+    const saveBoundsBtn = screen.getByRole('button', { name: /Save boundaries/i });
+    fireEvent.click(saveBoundsBtn);
+
+    await waitFor(() => {
+      expect(updateSegment).toHaveBeenCalledWith('seg-2', {
+        start_time_ms: 4700,
+        end_time_ms: 8300,
+      });
+      expect(onSegmentUpdate).toHaveBeenCalledWith(updatedSeg2);
+      expect(saveBoundsBtn).toBeDisabled();
+    });
+  });
+
+  it('preserves draft boundaries and shows error when boundary save fails', async () => {
+    vi.mocked(updateSegment).mockRejectedValue(new Error('Boundary collision rejected'));
+
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={1}
+        onExit={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Toggle boundary adjustment drawer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Nudge start back 100ms/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Save boundaries/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Boundary collision rejected')).toBeInTheDocument();
+      // Draft remains at 4700ms!
+      expect(screen.getByText('00:04.700')).toBeInTheDocument();
+    });
   });
 });

@@ -9,29 +9,47 @@ import {
   Eye,
   EyeOff,
   Gauge,
+  Pencil,
+  SlidersHorizontal,
+  Check,
+  X,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
-import { SegmentRead, getMasterAudioUrl } from '../api/client';
+import { SegmentRead, getMasterAudioUrl, updateSegment } from '../api/client';
 import { formatMs } from '../utils/formatters';
 
 export interface ShadowingPlayerProps {
   projectId: string;
   projectTitle: string;
   segments: SegmentRead[];
+  projectDurationSeconds?: number;
   initialSegmentIndex?: number;
   defaultBlindMode?: boolean;
   onExit: (lastSegmentIndex: number) => void;
+  onSegmentUpdate?: (updatedSegment: SegmentRead) => void;
 }
 
 const SPEED_PRESETS = [0.75, 0.85, 1.0, 1.15, 1.25];
+const MIN_CLIP_DURATION_MS = 100;
 
 export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   projectId,
   projectTitle,
-  segments,
+  segments: initialSegments,
+  projectDurationSeconds,
   initialSegmentIndex = 0,
   defaultBlindMode = true,
   onExit,
+  onSegmentUpdate,
 }) => {
+  // Local segments state to reflect in-place updates immediately
+  const [segments, setSegments] = useState<SegmentRead[]>(initialSegments);
+
+  useEffect(() => {
+    setSegments(initialSegments);
+  }, [initialSegments]);
+
   // Clamp initial index
   const safeInitialIndex = Math.max(
     0,
@@ -42,6 +60,19 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isMasked, setIsMasked] = useState(defaultBlindMode);
+
+  // Transcript Editing State
+  const [isEditingText, setIsEditingText] = useState(false);
+  const [draftText, setDraftText] = useState('');
+  const [isSavingText, setIsSavingText] = useState(false);
+  const [textEditError, setTextEditError] = useState<string | null>(null);
+
+  // Boundary Adjustment State
+  const [isAdjustingBounds, setIsAdjustingBounds] = useState(false);
+  const [draftStartMs, setDraftStartMs] = useState(0);
+  const [draftEndMs, setDraftEndMs] = useState(0);
+  const [isSavingBounds, setIsSavingBounds] = useState(false);
+  const [boundsError, setBoundsError] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimerRef = useRef<number | null>(null);
@@ -63,6 +94,32 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   }, [currentIndex]);
 
   const currentSegment = segments[currentIndex] || null;
+
+  // Synchronize draft states when currentIndex or currentSegment changes
+  useEffect(() => {
+    if (currentSegment) {
+      setDraftText(currentSegment.text);
+      setDraftStartMs(currentSegment.start_time_ms);
+      setDraftEndMs(currentSegment.end_time_ms);
+      setTextEditError(null);
+      setBoundsError(null);
+    }
+  }, [currentIndex, currentSegment?.id]);
+
+  // Calculate neighbor boundary limits
+  const prevSegment = currentIndex > 0 ? segments[currentIndex - 1] : null;
+  const nextSegment = currentIndex < segments.length - 1 ? segments[currentIndex + 1] : null;
+
+  const minStartFloor = prevSegment ? prevSegment.end_time_ms : 0;
+  const maxEndCeiling = nextSegment
+    ? nextSegment.start_time_ms
+    : projectDurationSeconds && projectDurationSeconds > 0
+    ? Math.ceil(projectDurationSeconds * 1000)
+    : Infinity;
+
+  // Active target boundaries (draft boundaries if adjusting, persisted boundaries otherwise)
+  const activeStartMs = isAdjustingBounds ? draftStartMs : currentSegment?.start_time_ms || 0;
+  const activeEndMs = isAdjustingBounds ? draftEndMs : currentSegment?.end_time_ms || 0;
 
   // Helper to cancel any pending stop timer
   const clearStopTimer = useCallback(() => {
@@ -107,8 +164,8 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const handlePlayPause = useCallback(() => {
     if (!audioRef.current || !currentSegment) return;
     const audio = audioRef.current;
-    const startTimeSec = currentSegment.start_time_ms / 1000;
-    const endTimeSec = currentSegment.end_time_ms / 1000;
+    const startTimeSec = activeStartMs / 1000;
+    const endTimeSec = activeEndMs / 1000;
 
     // Case 1: If currently playing -> PAUSE at current position
     if (isPlayingRef.current) {
@@ -139,14 +196,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       .catch((err) => {
         console.error('Audio playback error:', err);
       });
-  }, [clearStopTimer, currentSegment, scheduleStopTimer]);
+  }, [activeStartMs, activeEndMs, clearStopTimer, currentSegment, scheduleStopTimer]);
 
   // Replay from segment start
   const handleReplay = useCallback(() => {
     if (!audioRef.current || !currentSegment) return;
     const audio = audioRef.current;
-    const startTimeSec = currentSegment.start_time_ms / 1000;
-    const endTimeSec = currentSegment.end_time_ms / 1000;
+    const startTimeSec = activeStartMs / 1000;
+    const endTimeSec = activeEndMs / 1000;
 
     clearStopTimer();
     audio.currentTime = startTimeSec;
@@ -161,7 +218,29 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       .catch((err) => {
         console.error('Audio replay error:', err);
       });
-  }, [clearStopTimer, currentSegment, scheduleStopTimer]);
+  }, [activeStartMs, activeEndMs, clearStopTimer, currentSegment, scheduleStopTimer]);
+
+  // Preview draft boundaries directly
+  const handlePreviewDraft = useCallback(() => {
+    if (!audioRef.current) return;
+    const audio = audioRef.current;
+    const startTimeSec = draftStartMs / 1000;
+    const endTimeSec = draftEndMs / 1000;
+
+    clearStopTimer();
+    audio.currentTime = startTimeSec;
+    audio.playbackRate = playbackSpeedRef.current;
+
+    audio
+      .play()
+      .then(() => {
+        setIsPlaying(true);
+        scheduleStopTimer(endTimeSec);
+      })
+      .catch((err) => {
+        console.error('Preview playback error:', err);
+      });
+  }, [clearStopTimer, draftStartMs, draftEndMs, scheduleStopTimer]);
 
   // Navigate to previous clip
   const handlePreviousClip = useCallback(() => {
@@ -175,6 +254,8 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       audioRef.current.currentTime = prevSeg.start_time_ms / 1000;
     }
     setIsPlaying(false);
+    setIsEditingText(false);
+    setIsAdjustingBounds(false);
     setCurrentIndex(prevIndex);
     setIsMasked(defaultBlindMode);
   }, [clearStopTimer, currentIndex, defaultBlindMode, segments]);
@@ -191,6 +272,8 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       audioRef.current.currentTime = nextSeg.start_time_ms / 1000;
     }
     setIsPlaying(false);
+    setIsEditingText(false);
+    setIsAdjustingBounds(false);
     setCurrentIndex(nextIndex);
     setIsMasked(defaultBlindMode);
   }, [clearStopTimer, currentIndex, defaultBlindMode, segments]);
@@ -204,19 +287,19 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       if (audioRef.current) {
         audioRef.current.playbackRate = speed;
         // If actively playing, reschedule the boundary timer with the updated speed
-        if (isPlayingRef.current && currentSegment) {
-          scheduleStopTimer(currentSegment.end_time_ms / 1000);
+        if (isPlayingRef.current) {
+          scheduleStopTimer(activeEndMs / 1000);
         }
       }
     },
-    [currentSegment, scheduleStopTimer]
+    [activeEndMs, scheduleStopTimer]
   );
 
   // Audio event listeners
   const handleTimeUpdate = () => {
     if (!audioRef.current || !currentSegment) return;
     const current = audioRef.current.currentTime;
-    const endTimeSec = currentSegment.end_time_ms / 1000;
+    const endTimeSec = activeEndMs / 1000;
     if (current >= endTimeSec) {
       stopPlaybackAtBoundary(endTimeSec);
     }
@@ -232,8 +315,116 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   };
 
   const handleAudioEnded = () => {
-    if (currentSegment) {
-      stopPlaybackAtBoundary(currentSegment.end_time_ms / 1000);
+    stopPlaybackAtBoundary(activeEndMs / 1000);
+  };
+
+  // Transcript Editing Handlers
+  const handleStartTextEdit = () => {
+    if (!currentSegment) return;
+    setDraftText(currentSegment.text);
+    setTextEditError(null);
+    setIsEditingText(true);
+  };
+
+  const handleCancelTextEdit = () => {
+    if (!currentSegment) return;
+    setDraftText(currentSegment.text);
+    setTextEditError(null);
+    setIsEditingText(false);
+  };
+
+  const handleSaveTextEdit = async () => {
+    if (!currentSegment) return;
+    const trimmed = draftText.trim();
+    if (!trimmed) {
+      setTextEditError('Transcript text cannot be empty or whitespace only.');
+      return;
+    }
+
+    setIsSavingText(true);
+    setTextEditError(null);
+
+    try {
+      const updated = await updateSegment(currentSegment.id, { text: trimmed });
+      // Update local segment array atomically
+      setSegments((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s))
+      );
+      onSegmentUpdate?.(updated);
+      setIsEditingText(false);
+    } catch (err: unknown) {
+      setTextEditError(err instanceof Error ? err.message : 'Failed to save transcript');
+    } finally {
+      setIsSavingText(false);
+    }
+  };
+
+  // Boundary Adjustment Handlers
+  const nudgeStart = (deltaMs: number) => {
+    setBoundsError(null);
+    setDraftStartMs((prev) => {
+      const target = prev + deltaMs;
+      // Clamp between minStartFloor and draftEndMs - MIN_CLIP_DURATION_MS
+      const maxAllowed = draftEndMs - MIN_CLIP_DURATION_MS;
+      return Math.max(minStartFloor, Math.min(maxAllowed, target));
+    });
+  };
+
+  const nudgeEnd = (deltaMs: number) => {
+    setBoundsError(null);
+    setDraftEndMs((prev) => {
+      const target = prev + deltaMs;
+      // Clamp between draftStartMs + MIN_CLIP_DURATION_MS and maxEndCeiling
+      const minAllowed = draftStartMs + MIN_CLIP_DURATION_MS;
+      return Math.max(minAllowed, Math.min(maxEndCeiling, target));
+    });
+  };
+
+  const handleResetBounds = () => {
+    if (!currentSegment) return;
+    setDraftStartMs(currentSegment.start_time_ms);
+    setDraftEndMs(currentSegment.end_time_ms);
+    setBoundsError(null);
+    // If playing, reset audio position to saved start
+    if (audioRef.current) {
+      audioRef.current.currentTime = currentSegment.start_time_ms / 1000;
+    }
+  };
+
+  const handleSaveBounds = async () => {
+    if (!currentSegment) return;
+    if (draftEndMs - draftStartMs < MIN_CLIP_DURATION_MS) {
+      setBoundsError(`Duration must be at least ${MIN_CLIP_DURATION_MS}ms.`);
+      return;
+    }
+
+    setIsSavingBounds(true);
+    setBoundsError(null);
+
+    try {
+      // Stop playback if running so it cannot continue with stale timings
+      if (isPlayingRef.current) {
+        stopPlaybackAtBoundary(draftEndMs / 1000);
+      }
+
+      const updated = await updateSegment(currentSegment.id, {
+        start_time_ms: draftStartMs,
+        end_time_ms: draftEndMs,
+      });
+
+      // Update local segment array atomically
+      setSegments((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s))
+      );
+      onSegmentUpdate?.(updated);
+
+      if (audioRef.current) {
+        audioRef.current.currentTime = updated.start_time_ms / 1000;
+      }
+    } catch (err: unknown) {
+      setBoundsError(err instanceof Error ? err.message : 'Failed to save boundary adjustments');
+    } finally {
+      setIsSavingBounds(false);
     }
   };
 
@@ -312,6 +503,9 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const isFirstClip = currentIndex === 0;
   const isLastClip = currentIndex === segments.length - 1;
   const progressPercent = ((currentIndex + 1) / segments.length) * 100;
+  const isBoundsModified =
+    draftStartMs !== currentSegment.start_time_ms ||
+    draftEndMs !== currentSegment.end_time_ms;
 
   return (
     <div className="shadowing-player-container" data-testid="shadowing-player">
@@ -360,51 +554,263 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         <div className="player-clip-card">
           {/* Timing & Duration Header */}
           <div className="player-clip-meta">
-            <span className="player-timing-badge">
-              {formatMs(currentSegment.start_time_ms)} → {formatMs(currentSegment.end_time_ms)}
-            </span>
-            <span className="player-duration-badge">
-              {(currentSegment.duration_ms / 1000).toFixed(2)}s
-            </span>
-          </div>
-
-          {/* Masked / Revealed Transcript Display */}
-          <div className="player-transcript-wrapper">
-            <div
-              className={`player-transcript-box ${isMasked ? 'masked' : 'revealed'}`}
-              onClick={() => setIsMasked(!isMasked)}
-              tabIndex={0}
-              role="button"
-              aria-label={
-                isMasked
-                  ? 'Masked German transcript. Tap to reveal.'
-                  : 'German transcript. Tap to mask.'
-              }
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setIsMasked(!isMasked);
-                }
-              }}
-            >
-              <p className="player-transcript-text">{currentSegment.text}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span className="player-timing-badge">
+                {formatMs(isAdjustingBounds ? draftStartMs : currentSegment.start_time_ms)} →{' '}
+                {formatMs(isAdjustingBounds ? draftEndMs : currentSegment.end_time_ms)}
+              </span>
+              {currentSegment.is_edited && (
+                <span className="player-edited-tag" title="Transcript or boundaries manually edited">
+                  Edited
+                </span>
+              )}
             </div>
-            {isMasked && (
-              <div className="player-mask-hint">Tap text or Reveal button to unmask [T]</div>
-            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="player-duration-badge">
+                {(
+                  ((isAdjustingBounds ? draftEndMs - draftStartMs : currentSegment.duration_ms) /
+                    1000)
+                ).toFixed(2)}s
+              </span>
+              <button
+                className={`player-bounds-toggle-btn ${isAdjustingBounds ? 'active' : ''}`}
+                onClick={() => setIsAdjustingBounds((prev) => !prev)}
+                aria-label="Toggle boundary adjustment drawer"
+                title="Adjust clip start and end boundaries"
+              >
+                <SlidersHorizontal size={13} />
+                <span>Adjust</span>
+              </button>
+            </div>
           </div>
 
-          {/* Reveal / Hide Toggle Action */}
-          <div className="player-reveal-row">
-            <button
-              className="btn btn-secondary btn-sm player-reveal-btn"
-              onClick={() => setIsMasked(!isMasked)}
-              aria-label={isMasked ? 'Reveal transcript' : 'Hide transcript'}
-            >
-              {isMasked ? <Eye size={15} /> : <EyeOff size={15} />}
-              <span>{isMasked ? 'Reveal Transcript' : 'Hide Transcript'}</span>
-            </button>
-          </div>
+          {/* Boundary Adjustment Drawer */}
+          {isAdjustingBounds && (
+            <div className="player-bounds-drawer" data-testid="bounds-drawer">
+              {/* Start Boundary Nudges */}
+              <div className="player-bounds-row">
+                <div className="player-bounds-label-group">
+                  <span className="player-bounds-label">Start:</span>
+                  <span className="player-bounds-value">{formatMs(draftStartMs)}</span>
+                </div>
+                <div className="player-nudge-group">
+                  <button
+                    className="player-nudge-btn"
+                    onClick={() => nudgeStart(-100)}
+                    disabled={draftStartMs - 100 < minStartFloor}
+                    aria-label="Nudge start back 100ms"
+                  >
+                    -100ms
+                  </button>
+                  <button
+                    className="player-nudge-btn"
+                    onClick={() => nudgeStart(-25)}
+                    disabled={draftStartMs - 25 < minStartFloor}
+                    aria-label="Nudge start back 25ms"
+                  >
+                    -25ms
+                  </button>
+                  <button
+                    className="player-nudge-btn"
+                    onClick={() => nudgeStart(25)}
+                    disabled={draftStartMs + 25 > draftEndMs - MIN_CLIP_DURATION_MS}
+                    aria-label="Nudge start forward 25ms"
+                  >
+                    +25ms
+                  </button>
+                  <button
+                    className="player-nudge-btn"
+                    onClick={() => nudgeStart(100)}
+                    disabled={draftStartMs + 100 > draftEndMs - MIN_CLIP_DURATION_MS}
+                    aria-label="Nudge start forward 100ms"
+                  >
+                    +100ms
+                  </button>
+                </div>
+              </div>
+
+              {/* End Boundary Nudges */}
+              <div className="player-bounds-row">
+                <div className="player-bounds-label-group">
+                  <span className="player-bounds-label">End:</span>
+                  <span className="player-bounds-value">{formatMs(draftEndMs)}</span>
+                </div>
+                <div className="player-nudge-group">
+                  <button
+                    className="player-nudge-btn"
+                    onClick={() => nudgeEnd(-100)}
+                    disabled={draftEndMs - 100 < draftStartMs + MIN_CLIP_DURATION_MS}
+                    aria-label="Nudge end back 100ms"
+                  >
+                    -100ms
+                  </button>
+                  <button
+                    className="player-nudge-btn"
+                    onClick={() => nudgeEnd(-25)}
+                    disabled={draftEndMs - 25 < draftStartMs + MIN_CLIP_DURATION_MS}
+                    aria-label="Nudge end back 25ms"
+                  >
+                    -25ms
+                  </button>
+                  <button
+                    className="player-nudge-btn"
+                    onClick={() => nudgeEnd(25)}
+                    disabled={draftEndMs + 25 > maxEndCeiling}
+                    aria-label="Nudge end forward 25ms"
+                  >
+                    +25ms
+                  </button>
+                  <button
+                    className="player-nudge-btn"
+                    onClick={() => nudgeEnd(100)}
+                    disabled={draftEndMs + 100 > maxEndCeiling}
+                    aria-label="Nudge end forward 100ms"
+                  >
+                    +100ms
+                  </button>
+                </div>
+              </div>
+
+              {/* Error banner if save fails */}
+              {boundsError && (
+                <div className="player-edit-error" role="alert">
+                  <AlertCircle size={14} />
+                  <span>{boundsError}</span>
+                </div>
+              )}
+
+              {/* Boundary Actions Row */}
+              <div className="player-bounds-bottom-row">
+                <span className="player-bounds-duration">
+                  Duration: {((draftEndMs - draftStartMs) / 1000).toFixed(2)}s
+                </span>
+                <div className="player-bounds-actions">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handlePreviewDraft}
+                    aria-label="Preview draft boundaries"
+                    title="Play clip using draft boundaries"
+                  >
+                    <Play size={12} />
+                    <span>Preview</span>
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleResetBounds}
+                    disabled={!isBoundsModified || isSavingBounds}
+                    aria-label="Reset boundaries to saved values"
+                  >
+                    <RotateCcw size={12} />
+                    <span>Reset</span>
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSaveBounds}
+                    disabled={!isBoundsModified || isSavingBounds}
+                    aria-label="Save boundaries"
+                  >
+                    {isSavingBounds ? <Loader2 size={12} className="spin" /> : <Check size={12} />}
+                    <span>Save Bounds</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Transcript Display or Inline Edit Form */}
+          {isEditingText ? (
+            <div className="player-edit-form" data-testid="transcript-edit-form">
+              <textarea
+                className="player-edit-textarea"
+                value={draftText}
+                onChange={(e) => setDraftText(e.target.value)}
+                placeholder="German transcript text..."
+                rows={3}
+                autoFocus
+                aria-label="Edit German transcript"
+              />
+
+              {textEditError && (
+                <div className="player-edit-error" role="alert">
+                  <AlertCircle size={14} />
+                  <span>{textEditError}</span>
+                </div>
+              )}
+
+              <div className="player-edit-actions">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCancelTextEdit}
+                  disabled={isSavingText}
+                  aria-label="Cancel editing"
+                >
+                  <X size={13} />
+                  <span>Cancel</span>
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleSaveTextEdit}
+                  disabled={isSavingText || !draftText.trim()}
+                  aria-label="Save transcript"
+                >
+                  {isSavingText ? <Loader2 size={13} className="spin" /> : <Check size={13} />}
+                  <span>Save Text</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Masked / Revealed Transcript Display */}
+              <div className="player-transcript-wrapper">
+                <div
+                  className={`player-transcript-box ${isMasked ? 'masked' : 'revealed'}`}
+                  onClick={() => setIsMasked(!isMasked)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={
+                    isMasked
+                      ? 'Masked German transcript. Tap to reveal.'
+                      : 'German transcript. Tap to mask.'
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setIsMasked(!isMasked);
+                    }
+                  }}
+                >
+                  <p className="player-transcript-text">{currentSegment.text}</p>
+                </div>
+                {isMasked && (
+                  <div className="player-mask-hint">Tap text or Reveal button to unmask [T]</div>
+                )}
+              </div>
+
+              {/* Reveal / Hide & Edit Actions */}
+              <div className="player-reveal-row" style={{ gap: '10px' }}>
+                <button
+                  className="btn btn-secondary btn-sm player-reveal-btn"
+                  onClick={() => setIsMasked(!isMasked)}
+                  aria-label={isMasked ? 'Reveal transcript' : 'Hide transcript'}
+                >
+                  {isMasked ? <Eye size={15} /> : <EyeOff size={15} />}
+                  <span>{isMasked ? 'Reveal Transcript' : 'Hide Transcript'}</span>
+                </button>
+
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleStartTextEdit}
+                  aria-label="Edit transcript text"
+                  title="Correct transcription text"
+                  style={{ minHeight: 'var(--touch-target-min)', padding: '8px 14px' }}
+                >
+                  <Pencil size={14} />
+                  <span>Edit Text</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Playback Speed Controls */}

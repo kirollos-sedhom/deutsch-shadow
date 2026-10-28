@@ -157,6 +157,9 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
   // Keyboard shortcut listener ('T' key toggles reveal)
   useEffect(() => {
+    // If practicing in focused player, let ShadowingPlayer handle shortcuts
+    if (practicingClipIndex !== null) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in form inputs
       const target = e.target as HTMLElement | null;
@@ -176,7 +179,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeSegmentId, isBlindMode]);
+  }, [activeSegmentId, isBlindMode, practicingClipIndex]);
 
   // Helper to clear segment stop timeout
   const clearSegmentStopTimer = () => {
@@ -321,8 +324,14 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         projectId={project.id}
         projectTitle={project.title}
         segments={segments}
+        projectDurationSeconds={project.duration_seconds}
         initialSegmentIndex={practicingClipIndex}
         defaultBlindMode={isBlindMode}
+        onSegmentUpdate={(updated) => {
+          setSegments((prev) =>
+            prev.map((s) => (s.id === updated.id ? updated : s))
+          );
+        }}
         onExit={(lastIndex) => {
           setPracticingClipIndex(null);
           const targetSeg = segments[lastIndex];

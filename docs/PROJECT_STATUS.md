@@ -1,8 +1,8 @@
 # Project Status — Deutsch Shadow
 
 **Last Updated:** 2026-10-28  
-**Current Phase:** Milestone 6 Phase 1 Complete — Core Shadowing Player Operational & Verified  
-**Overall Status:** 🟢 **Milestone 6 Phase 1 Completed — Ready for Milestone 6 Phase 2 (Editing & Boundaries)**
+**Current Phase:** Milestone 6 Complete — Shadowing Player, Transcript Editing & Boundary Adjustment Operational & Verified  
+**Overall Status:** 🟢 **Milestone 6 Completed — Ready for Milestone 7 (Microphone Recording & Local Storage)**
 
 ---
 
@@ -15,7 +15,7 @@
 | **3** | Browser-Based Debugging Player & Usability Polish | 🟢 **Completed** | Player UI, blind mode, upload & fixes verified | Completed |
 | **4** | Database & Backend API | 🟢 **Completed** | SQLite schema & FastAPI endpoints verified | Completed |
 | **5** | Recording Library & Import Interface | 🟢 **Completed** | React/TypeScript SPA + Vite + FastAPI verified | Completed |
-| **6** | Shadowing Player, Transcript Editing & Boundaries | 🟡 **Phase 1 Complete** | Phase 1 Player Core verified; Phase 2 ready | Milestone 6 |
+| **6** | Shadowing Player, Transcript Editing & Boundaries | 🟢 **Completed** | Core player, transcript editing & boundaries verified | Completed |
 | **7** | Microphone Recording & Persistent Storage | ⚪ Planned | Depends on Milestone 6 | Milestone 7 |
 | **8** | Auto-Pause Loop & Instant Comparison | ⚪ Planned | Depends on Milestone 7 | Milestone 8 |
 | **9** | Test, Fix Bugs & Polish MVP | ⚪ Planned | Depends on Milestone 8 | Milestone 9 |
@@ -120,6 +120,18 @@
      - **28/28 frontend tests passing** via Vitest (100% pass rate).
      - **41/41 backend tests passing** via pytest (100% pass rate).
      - **TypeScript check and production build verified:** zero compilation or type errors.
+10. **Milestone 6 Phase 2 Transcript Editing & Boundary Adjustment (Verified):**
+    - **German Transcript Editing:** Inline editing with autosizing textarea, draft management, cancel/discard, whitespace-only prevention, and is_edited = true flag persistence via PATCH /api/segments/{id}.
+    - **Fine Boundary Nudge Drawer:** Dedicated collapsible drawer with touch-friendly ±25 ms and ±100 ms micro-adjustments for segment start and end boundaries.
+    - **Boundary Constraints & Safeguards:** Strict validation enforcing start >= 0 ms, minimum clip duration >= 100 ms, boundary ceiling capped at total project duration, and neighbor boundary overlap prevention while permitting contiguous touching segments (gap == 0).
+    - **Live Draft Preview:** Auditory preview of proposed draft boundaries before saving, without persisting uncommitted changes.
+    - **Overview Synchronization:** Immediate in-memory state propagation from player to overview list upon save, eliminating unnecessary API refetches or media re-processing.
+    - **Draft & Error Preservation:** Network or validation errors preserve the user's uncommitted draft text and boundaries with clear contextual error messages.
+    - **Keyboard Shortcut Isolation:** Resolved shortcut collision (T key) between ProjectDetailView and ShadowingPlayer during active practice.
+    - **Automated Verification:**
+      - **38/38 frontend tests passing** via Vitest (100% pass rate).
+      - **51/51 backend tests passing** via pytest (100% pass rate).
+      - **TypeScript check and production build verified:** zero compilation or type errors.
 
 ---
 
@@ -146,6 +158,6 @@
 
 ## 4. Next Immediate Actions (Upon Approval)
 
-1. Run environment inspection (Python version, Node version, FFmpeg availability, CPU/GPU capabilities).
-2. Execute Milestone 1: Initialize Git repository, configure `.gitignore`, and commit documentation baseline.
-3. Begin Milestone 2: Establish the backend audio-processing pipeline.
+1. Review and plan Milestone 7: Microphone Recording & Persistent Storage.
+2. Design MediaRecorder API client workflow for capturing user vocal repetitions.
+3. Design backend endpoints and SQLite schema integration for storing user audio takes locally.

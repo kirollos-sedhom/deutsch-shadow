@@ -8,6 +8,7 @@ vi.mock('../api/client', () => ({
   getProjectSegments: vi.fn(),
   processProject: vi.fn(),
   getMasterAudioUrl: vi.fn((id: string) => `/api/media/${id}/master`),
+  updateSegment: vi.fn(),
 }));
 
 describe('ProjectDetailView Component & Blind Mode', () => {
@@ -375,6 +376,51 @@ describe('ProjectDetailView Component & Blind Mode', () => {
       const clipCard2 = document.getElementById('clip-card-seg-2');
       expect(clipCard2).toBeInTheDocument();
       expect(clipCard2).toHaveClass('active-playback');
+    });
+  });
+
+  it('synchronizes edited segment from ShadowingPlayer back to overview list', async () => {
+    const updatedSeg1: client.SegmentRead = {
+      ...mockSegments[0],
+      text: 'Guten Tag, wie geht es Ihnen? (Persisted Edit)',
+      is_edited: true,
+    };
+    vi.mocked(client.updateSegment).mockResolvedValue(updatedSeg1);
+
+    render(
+      <ProjectDetailView
+        projectId="proj-test-1"
+        onBack={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    // Enter player
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Start shadowing all clips/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Start shadowing all clips/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('shadowing-player')).toBeInTheDocument();
+    });
+
+    // Edit text
+    fireEvent.click(screen.getByRole('button', { name: /Edit transcript text/i }));
+    const textarea = screen.getByRole('textbox', { name: /Edit German transcript/i });
+    fireEvent.change(textarea, { target: { value: 'Guten Tag, wie geht es Ihnen? (Persisted Edit)' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save transcript/i }));
+
+    await waitFor(() => {
+      expect(client.updateSegment).toHaveBeenCalled();
+    });
+
+    // Return to overview
+    fireEvent.click(screen.getByRole('button', { name: /Back to project overview/i }));
+
+    // Overview displays the updated text
+    await waitFor(() => {
+      expect(screen.getByText('Guten Tag, wie geht es Ihnen? (Persisted Edit)')).toBeInTheDocument();
     });
   });
 });

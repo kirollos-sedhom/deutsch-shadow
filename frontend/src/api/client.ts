@@ -169,3 +169,23 @@ export async function getWhisperModels(): Promise<WhisperModelTier[]> {
 export function getMasterAudioUrl(id: string): string {
   return `${BASE_URL}/media/${encodeURIComponent(id)}/master`;
 }
+
+export interface SegmentUpdatePayload {
+  text?: string;
+  start_time_ms?: number;
+  end_time_ms?: number;
+}
+
+export async function updateSegment(
+  segmentId: string,
+  payload: SegmentUpdatePayload
+): Promise<SegmentRead> {
+  const res = await fetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<SegmentRead>(res);
+}

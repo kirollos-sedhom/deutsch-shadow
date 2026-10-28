@@ -1,6 +1,7 @@
 """Segment management service handling editing, boundary validation, splitting, and merging."""
 
 from __future__ import annotations
+import math
 from typing import List, Optional
 
 from fastapi import HTTPException, status
@@ -8,7 +9,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.db.models import Recording, Segment
+from backend.app.db.models import Project, Recording, Segment
 from backend.app.schemas.segment import (
     SegmentMergeResponse,
     SegmentRead,
@@ -69,22 +70,87 @@ class SegmentService:
 
         if payload.text is not None:
             new_text = payload.text.strip()
+            if not new_text:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Segment text cannot be empty or whitespace only",
+                )
             if new_text != segment.text:
                 segment.text = new_text
                 is_modified = True
 
-        new_start = payload.start_time_ms if payload.start_time_ms is not None else segment.start_time_ms
-        new_end = payload.end_time_ms if payload.end_time_ms is not None else segment.end_time_ms
+        # Check boundary changes: only validate boundaries if submitted in payload
+        if payload.start_time_ms is not None or payload.end_time_ms is not None:
+            new_start = (
+                payload.start_time_ms
+                if payload.start_time_ms is not None
+                else segment.start_time_ms
+            )
+            new_end = (
+                payload.end_time_ms
+                if payload.end_time_ms is not None
+                else segment.end_time_ms
+            )
 
-        if new_start != segment.start_time_ms or new_end != segment.end_time_ms:
-            if new_start >= new_end:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid segment bounds: start_time_ms ({new_start}) must be strictly less than end_time_ms ({new_end})",
+            if new_start != segment.start_time_ms or new_end != segment.end_time_ms:
+                if new_start < 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid segment bounds: start_time_ms ({new_start}) cannot be negative",
+                    )
+                if (new_end - new_start) < 100:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid segment bounds: duration ({new_end - new_start}ms) must be at least 100ms",
+                    )
+
+                # Validate no overlap with previous segment (touching is permitted: new_start == prev_seg.end_time_ms)
+                prev_stmt = select(Segment).where(
+                    Segment.project_id == segment.project_id,
+                    Segment.sequence_index == segment.sequence_index - 1,
                 )
-            segment.start_time_ms = new_start
-            segment.end_time_ms = new_end
-            is_modified = True
+                prev_seg = (await session.execute(prev_stmt)).scalar_one_or_none()
+                if prev_seg and new_start < prev_seg.end_time_ms:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Invalid segment bounds: start_time_ms ({new_start}ms) overlaps with "
+                            f"previous segment #{prev_seg.sequence_index} end ({prev_seg.end_time_ms}ms)"
+                        ),
+                    )
+
+                # Validate no overlap with next segment (touching is permitted: new_end == next_seg.start_time_ms)
+                next_stmt = select(Segment).where(
+                    Segment.project_id == segment.project_id,
+                    Segment.sequence_index == segment.sequence_index + 1,
+                )
+                next_seg = (await session.execute(next_stmt)).scalar_one_or_none()
+                if next_seg and new_end > next_seg.start_time_ms:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Invalid segment bounds: end_time_ms ({new_end}ms) overlaps with "
+                            f"next segment #{next_seg.sequence_index} start ({next_seg.start_time_ms}ms)"
+                        ),
+                    )
+
+                # If this is the terminal segment, validate against media duration ceiling
+                if not next_seg:
+                    proj = await session.get(Project, segment.project_id)
+                    if proj and proj.duration_seconds and proj.duration_seconds > 0:
+                        max_allowed_ms = math.ceil(proj.duration_seconds * 1000)
+                        if new_end > max_allowed_ms:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=(
+                                    f"Invalid segment bounds: end_time_ms ({new_end}ms) cannot "
+                                    f"exceed total media duration ({max_allowed_ms}ms)"
+                                ),
+                            )
+
+                segment.start_time_ms = new_start
+                segment.end_time_ms = new_end
+                is_modified = True
 
         if is_modified:
             segment.is_edited = True
