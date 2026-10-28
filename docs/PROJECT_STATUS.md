@@ -1,8 +1,8 @@
 # Project Status — Deutsch Shadow
 
 **Last Updated:** 2026-10-28  
-**Current Phase:** Milestone 5 Complete — Recording Library & Import Interface Operational & Verified  
-**Overall Status:** 🟢 **Milestone 5 Completed — Ready for Milestone 6 (Shadowing Player Core & Editing)**
+**Current Phase:** Milestone 6 Phase 1 Complete — Core Shadowing Player Operational & Verified  
+**Overall Status:** 🟢 **Milestone 6 Phase 1 Completed — Ready for Milestone 6 Phase 2 (Editing & Boundaries)**
 
 ---
 
@@ -15,7 +15,7 @@
 | **3** | Browser-Based Debugging Player & Usability Polish | 🟢 **Completed** | Player UI, blind mode, upload & fixes verified | Completed |
 | **4** | Database & Backend API | 🟢 **Completed** | SQLite schema & FastAPI endpoints verified | Completed |
 | **5** | Recording Library & Import Interface | 🟢 **Completed** | React/TypeScript SPA + Vite + FastAPI verified | Completed |
-| **6** | Shadowing Player, Transcript Editing & Boundaries | 🟡 **Ready to Start** | Awaiting approval to proceed | Milestone 6 |
+| **6** | Shadowing Player, Transcript Editing & Boundaries | 🟡 **Phase 1 Complete** | Phase 1 Player Core verified; Phase 2 ready | Milestone 6 |
 | **7** | Microphone Recording & Persistent Storage | ⚪ Planned | Depends on Milestone 6 | Milestone 7 |
 | **8** | Auto-Pause Loop & Instant Comparison | ⚪ Planned | Depends on Milestone 7 | Milestone 8 |
 | **9** | Test, Fix Bugs & Polish MVP | ⚪ Planned | Depends on Milestone 8 | Milestone 9 |
@@ -106,6 +106,18 @@
    - **Mobile-First Responsive Layout:** Stacked clip cards replacing rigid desktop table; responsive navbar and cards down to 360px without horizontal overflow; accessible >=44px touch targets.
    - **Automated Verification:**
      - **13/13 frontend tests passing** via Vitest (100% pass rate).
+     - **41/41 backend tests passing** via pytest (100% pass rate).
+     - **TypeScript check and production build verified:** zero compilation or type errors.
+9. **Milestone 6 Phase 1 Core Shadowing Player (Verified):**
+   - **Dedicated Component:** `ShadowingPlayer.tsx` for focused, distraction-free practice on one German speech clip at a time.
+   - **Clip Navigation & Progress:** Sequential position tracking (`Clip N / Total`) with visual progress line, clip timestamps, and duration badge.
+   - **Precision Audio Controls:** Non-seeking pause, resume within boundaries, replay from start offset, and boundary clamping using synchronized wall-clock timers accounting for `playbackRate`.
+   - **Native Playback Speed:** Five speed presets (`0.75x`, `0.85x`, `1.0x`, `1.15x`, `1.25x`) with native pitch preservation (`preservesPitch = true`) and timer rescheduling.
+   - **Pedagogical Blind Listening:** German transcript masked by default (`filter: blur(8px)`), tap-to-reveal on text card or action button, and automatic re-masking on clip transitions.
+   - **Desktop Keyboard Ergonomics:** `Space` (Play/Pause), `R` (Replay), `T` (Reveal), `Left`/`Right` (Navigation), `Esc` (Exit), with complete isolation from text inputs.
+   - **Overview Integration:** "Start Shadowing" header action and per-clip "Shadow" button in `ProjectDetailView.tsx`, returning with scroll and selection preservation.
+   - **Automated Verification:**
+     - **28/28 frontend tests passing** via Vitest (100% pass rate).
      - **41/41 backend tests passing** via pytest (100% pass rate).
      - **TypeScript check and production build verified:** zero compilation or type errors.
 

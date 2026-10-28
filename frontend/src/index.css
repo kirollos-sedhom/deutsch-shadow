@@ -912,3 +912,415 @@ a:hover {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ==========================================================================
+   Milestone 6: Dedicated Shadowing Player
+   ========================================================================== */
+
+.shadowing-player-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 4px 0 24px 0;
+}
+
+.player-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.player-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: var(--touch-target-min);
+  transition: all 0.12s ease-in-out;
+  user-select: none;
+}
+
+.player-back-btn:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.player-back-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.player-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.player-project-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.player-counter-badge {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--primary);
+  background-color: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.player-progress-track {
+  width: 100%;
+  height: 4px;
+  background-color: var(--border-base);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.player-progress-fill {
+  height: 100%;
+  background-color: var(--primary);
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.player-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+}
+
+.player-clip-card {
+  width: 100%;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.player-clip-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.player-timing-badge {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background-color: rgba(15, 23, 42, 0.6);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+.player-duration-badge {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.player-transcript-wrapper {
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 8px 0;
+}
+
+.player-transcript-box {
+  width: 100%;
+  cursor: pointer;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.player-transcript-box:focus-visible {
+  outline: 2px solid var(--border-focus);
+}
+
+.player-transcript-text {
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--text-primary);
+  margin: 0;
+  word-break: break-word;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.player-transcript-box.masked .player-transcript-text {
+  filter: blur(8px);
+  user-select: none;
+  opacity: 0.35;
+}
+
+.player-transcript-box.masked:hover .player-transcript-text {
+  opacity: 0.65;
+}
+
+.player-transcript-box.revealed .player-transcript-text {
+  filter: none;
+  user-select: text;
+  opacity: 1;
+}
+
+.player-mask-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 6px;
+  user-select: none;
+}
+
+.player-reveal-row {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding-top: 4px;
+  border-top: 1px solid rgba(51, 65, 85, 0.4);
+}
+
+.player-reveal-btn {
+  min-height: var(--touch-target-min);
+  padding: 8px 18px;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.player-speed-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.player-speed-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.player-speed-group {
+  display: flex;
+  gap: 3px;
+  background-color: var(--bg-card);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-base);
+}
+
+.player-speed-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  min-height: 36px;
+  min-width: 44px;
+  transition: all 0.12s ease;
+}
+
+.player-speed-btn:hover {
+  color: var(--text-primary);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.player-speed-btn.active {
+  background-color: var(--primary);
+  color: #090d16;
+}
+
+.player-controls-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.player-nav-btn {
+  min-height: 48px;
+  min-width: 72px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.player-nav-btn:hover:not(:disabled) {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.player-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.player-replay-btn {
+  min-height: 48px;
+  min-width: 80px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.player-replay-btn:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.player-main-play-btn {
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  background-color: var(--primary);
+  color: #090d16;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(56, 189, 248, 0.35);
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.player-main-play-btn:hover {
+  background-color: #7dd3fc;
+  transform: scale(1.04);
+}
+
+.player-main-play-btn:active {
+  transform: scale(0.96);
+}
+
+.player-main-play-btn:focus-visible {
+  outline: 3px solid #7dd3fc;
+  outline-offset: 3px;
+}
+
+.player-shortcuts-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.shortcut-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcut-item kbd {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 480px) {
+  .player-transcript-text {
+    font-size: 18px;
+  }
+
+  .player-clip-card {
+    padding: 16px 14px;
+  }
+
+  .player-controls-section {
+    gap: 8px;
+  }
+
+  .player-nav-btn {
+    min-width: 58px;
+    padding: 8px 10px;
+  }
+
+  .player-replay-btn {
+    min-width: 62px;
+    padding: 8px 10px;
+  }
+
+  .player-shortcuts-footer {
+    display: none;
+  }
+}
+

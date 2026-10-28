@@ -146,25 +146,33 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
 - **Goal:** Deliver the primary shadowing interface with blind/revealed transcript modes, non-destructive segment navigation, and real-time boundary and text editing.
 - **Prerequisites:** Milestone 5 complete.
 - **Tasks:**
-  - [ ] Build **Shadowing Player Core**:
-    - Waveform or timeline segment track.
-    - Play/Pause, Next Segment, Previous Segment, and Segment Looping controls.
-    - Ergonomic keyboard shortcuts (`Space`, `R`, `Left`, `Right`, `L`).
-  - [ ] Build **Transcript Display & Blind Mode**:
-    - Default "Blind Mode" with blurred or hidden text.
-    - "Reveal" toggle button and keyboard hotkey (`R`) to show German text.
-  - [ ] Build **Transcript In-Place Editor**:
+  - [x] Build **Shadowing Player Core (Phase 1 Verified)**:
+    - Dedicated, mobile-first `ShadowingPlayer` component focused on one clip at a time.
+    - Clip position indicator (`Clip N / Total`) and progress bar.
+    - Play, Pause in-place, Resume from position without unwanted seeking, Replay from clip start boundary.
+    - Next Segment and Previous Segment navigation with boundary-disabled states and automatic audio stop.
+    - Native playback speed selection (`0.75x`, `0.85x`, `1.0x`, `1.15x`, `1.25x`) with pitch preservation and wall-clock boundary timer adjustment.
+    - Pedagogical transcript masking by default, tap-to-reveal, toggle button, and predictable re-masking on clip navigation.
+    - Ergonomic keyboard shortcuts (`Space`, `R`, `T`, `Left`, `Right`, `Esc`) with strict input/form element isolation.
+    - Overview integration: "Start Shadowing" header action and per-clip "Shadow" button, with scroll and selection preservation on return.
+  - [ ] Build **Transcript In-Place Editor (Phase 2)**:
     - Double-click or edit button to correct transcript text.
     - Save changes back to SQLite via `PATCH /api/segments/{id}`.
-  - [ ] Build **Segment Boundary Adjustment UI**:
+  - [ ] Build **Segment Boundary Adjustment UI (Phase 2)**:
     - Start and end time nudge buttons ($\pm 25\text{ms}$, $\pm 100\text{ms}$).
     - Split segment action (at playhead position).
     - Merge with next / previous segment action.
 - **Testing Requirements:**
-  - Unit tests for boundary adjustment logic ensuring start time cannot exceed end time and adjacent segments remain ordered.
-  - Manual verification of keyboard navigation and transcript reveal interactions.
+  - Frontend component tests (Vitest / React Testing Library):
+    - [x] `src/components/ShadowingPlayer.test.tsx` (10 unit/integration tests covering play/pause/resume, replay, boundaries, speed, navigation, blind mode, shortcuts, typing isolation, and exit).
+    - [x] `src/components/ProjectDetailView.test.tsx` (10 component tests covering blind listening, segment playback, Start Shadowing entry, and overview return).
+    - [x] Total frontend suite: **28/28 tests passing**.
+    - [x] Production build & TypeScript check (`tsc && vite build`): **0 errors**.
+  - Backend integration tests:
+    - [x] Backend test suite: **41/41 tests passing**.
 - **Completion Criteria:**
-  - User can seamlessly navigate segments, hide/reveal transcripts, adjust boundaries with audible feedback, and edit text with automatic persistence.
+  - [x] Phase 1 Core Player: User can seamlessly practice individual clips in a dedicated mobile-first player with speed adjustment, blind listening, keyboard navigation, and return to project overview.
+  - [ ] Phase 2: In-player transcript editing and boundary nudging.
 
 ---
 

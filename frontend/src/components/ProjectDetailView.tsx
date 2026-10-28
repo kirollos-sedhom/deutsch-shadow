@@ -13,6 +13,7 @@ import {
   Volume2,
   Eye,
   EyeOff,
+  Headphones,
 } from 'lucide-react';
 import {
   ProjectDetail,
@@ -23,6 +24,7 @@ import {
   getMasterAudioUrl,
 } from '../api/client';
 import { formatDate, formatDuration, formatMs } from '../utils/formatters';
+import { ShadowingPlayer } from './ShadowingPlayer';
 
 interface ProjectDetailViewProps {
   projectId: string;
@@ -44,6 +46,9 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   // Blind Listening State
   const [isBlindMode, setIsBlindMode] = useState(true);
   const [revealedSegmentIds, setRevealedSegmentIds] = useState<Set<string>>(new Set());
+
+  // Dedicated Shadowing Player mode
+  const [practicingClipIndex, setPracticingClipIndex] = useState<number | null>(null);
 
   // Playback state
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
@@ -309,6 +314,32 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     );
   }
 
+  // Focused Shadowing Player view mode
+  if (practicingClipIndex !== null && project.status === 'ready') {
+    return (
+      <ShadowingPlayer
+        projectId={project.id}
+        projectTitle={project.title}
+        segments={segments}
+        initialSegmentIndex={practicingClipIndex}
+        defaultBlindMode={isBlindMode}
+        onExit={(lastIndex) => {
+          setPracticingClipIndex(null);
+          const targetSeg = segments[lastIndex];
+          if (targetSeg) {
+            setActiveSegmentId(targetSeg.id);
+            setTimeout(() => {
+              const el = document.getElementById(`clip-card-${targetSeg.id}`);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 50);
+          }
+        }}
+      />
+    );
+  }
+
   const isVideo = project.media_type.startsWith('video');
 
   return (
@@ -440,15 +471,33 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               </span>
             </div>
 
-            <button
-              className={`blind-mode-toggle-btn ${isBlindMode ? 'active' : ''}`}
-              onClick={toggleGlobalBlindMode}
-              title="Toggle Blind Listening (Shortcut: T)"
-              aria-label="Toggle blind listening mode"
-            >
-              {isBlindMode ? <EyeOff size={14} /> : <Eye size={14} />}
-              <span>{isBlindMode ? 'Blind Mode: ON (Masked)' : 'Blind Mode: OFF (Revealed)'}</span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {segments.length > 0 && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    if (audioRef.current) audioRef.current.pause();
+                    setIsPlaying(false);
+                    setPracticingClipIndex(0);
+                  }}
+                  aria-label="Start shadowing all clips"
+                  style={{ gap: '6px' }}
+                >
+                  <Headphones size={13} />
+                  <span>Start Shadowing</span>
+                </button>
+              )}
+
+              <button
+                className={`blind-mode-toggle-btn ${isBlindMode ? 'active' : ''}`}
+                onClick={toggleGlobalBlindMode}
+                title="Toggle Blind Listening (Shortcut: T)"
+                aria-label="Toggle blind listening mode"
+              >
+                {isBlindMode ? <EyeOff size={14} /> : <Eye size={14} />}
+                <span>{isBlindMode ? 'Blind Mode: ON (Masked)' : 'Blind Mode: OFF (Revealed)'}</span>
+              </button>
+            </div>
           </div>
 
           {segments.length === 0 ? (
@@ -464,6 +513,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 return (
                   <div
                     key={segment.id}
+                    id={`clip-card-${segment.id}`}
                     className={`clip-card ${isActive ? 'active-playback' : ''}`}
                   >
                     <div className="clip-header">
@@ -497,6 +547,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     </div>
 
                     <div className="clip-actions">
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          if (audioRef.current) audioRef.current.pause();
+                          setIsPlaying(false);
+                          setPracticingClipIndex(segment.sequence_index);
+                        }}
+                        aria-label={`Shadow clip #${segment.sequence_index + 1}`}
+                        title={`Practice clip #${segment.sequence_index + 1} in focused player`}
+                        style={{ gap: '5px' }}
+                      >
+                        <Headphones size={12} />
+                        <span>Shadow</span>
+                      </button>
+
                       <button
                         className="btn btn-secondary btn-sm"
                         onClick={() => toggleSegmentReveal(segment.id)}

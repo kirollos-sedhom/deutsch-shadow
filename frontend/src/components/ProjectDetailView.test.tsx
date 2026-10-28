@@ -311,4 +311,71 @@ describe('ProjectDetailView Component & Blind Mode', () => {
       expect(screen.getByRole('button', { name: /Play clip #1/i })).toBeInTheDocument();
     });
   });
+
+  it('enters ShadowingPlayer via Start Shadowing button and returns to overview', async () => {
+    render(
+      <ProjectDetailView
+        projectId="proj-test-1"
+        onBack={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Start shadowing all clips/i })).toBeInTheDocument();
+    });
+
+    const startBtn = screen.getByRole('button', { name: /Start shadowing all clips/i });
+    fireEvent.click(startBtn);
+
+    // Player mounted and focused on clip 1
+    await waitFor(() => {
+      expect(screen.getByTestId('shadowing-player')).toBeInTheDocument();
+      expect(screen.getByText('Clip 1 / 2')).toBeInTheDocument();
+    });
+
+    // Click Overview to return
+    const overviewBtn = screen.getByRole('button', { name: /Back to project overview/i });
+    fireEvent.click(overviewBtn);
+
+    // Overview is back
+    await waitFor(() => {
+      expect(screen.getByText('Practice Clips (2)')).toBeInTheDocument();
+    });
+  });
+
+  it('enters ShadowingPlayer for a specific clip and preserves selected clip on return', async () => {
+    render(
+      <ProjectDetailView
+        projectId="proj-test-1"
+        onBack={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Shadow clip #2/i })).toBeInTheDocument();
+    });
+
+    const shadowClip2Btn = screen.getByRole('button', { name: /Shadow clip #2/i });
+    fireEvent.click(shadowClip2Btn);
+
+    // Focused on clip 2
+    await waitFor(() => {
+      expect(screen.getByTestId('shadowing-player')).toBeInTheDocument();
+      expect(screen.getByText('Clip 2 / 2')).toBeInTheDocument();
+    });
+
+    // Return to overview
+    const overviewBtn = screen.getByRole('button', { name: /Back to project overview/i });
+    fireEvent.click(overviewBtn);
+
+    // Overview back and clip 2 is highlighted as active
+    await waitFor(() => {
+      const clipCard2 = document.getElementById('clip-card-seg-2');
+      expect(clipCard2).toBeInTheDocument();
+      expect(clipCard2).toHaveClass('active-playback');
+    });
+  });
 });
+
