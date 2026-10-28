@@ -515,9 +515,10 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             </div>
           ) : (
             <div className="clips-list">
-              {segments.map((segment) => {
+              {segments.map((segment, index) => {
                 const isActive = activeSegmentId === segment.id;
                 const isRevealed = !isBlindMode || revealedSegmentIds.has(segment.id);
+                const clipNumber = index + 1;
 
                 return (
                   <div
@@ -527,7 +528,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                   >
                     <div className="clip-header">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span className="clip-index">#{segment.sequence_index + 1}</span>
+                        <span className="clip-index">#{clipNumber}</span>
                         <span className="clip-timing">
                           {formatMs(segment.start_time_ms)} → {formatMs(segment.end_time_ms)}
                         </span>
@@ -561,10 +562,10 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         onClick={() => {
                           if (audioRef.current) audioRef.current.pause();
                           setIsPlaying(false);
-                          setPracticingClipIndex(segment.sequence_index);
+                          setPracticingClipIndex(index);
                         }}
-                        aria-label={`Shadow clip #${segment.sequence_index + 1}`}
-                        title={`Practice clip #${segment.sequence_index + 1} in focused player`}
+                        aria-label={`Shadow clip #${clipNumber}`}
+                        title={`Practice clip #${clipNumber} in focused player`}
                         style={{ gap: '5px' }}
                       >
                         <Headphones size={12} />
@@ -585,8 +586,8 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         onClick={() => togglePlaySegment(segment)}
                         aria-label={
                           isActive && isPlaying
-                            ? `Pause clip #${segment.sequence_index + 1}`
-                            : `Play clip #${segment.sequence_index + 1}`
+                            ? `Pause clip #${clipNumber}`
+                            : `Play clip #${clipNumber}`
                         }
                       >
                         {isActive && isPlaying ? <Pause size={12} /> : <Play size={12} />}

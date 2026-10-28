@@ -34,7 +34,7 @@ describe('ProjectDetailView Component & Blind Mode', () => {
     {
       id: 'seg-1',
       project_id: 'proj-test-1',
-      sequence_index: 0,
+      sequence_index: 1,
       start_time_ms: 1000,
       end_time_ms: 4500,
       duration_ms: 3500,
@@ -48,7 +48,7 @@ describe('ProjectDetailView Component & Blind Mode', () => {
     {
       id: 'seg-2',
       project_id: 'proj-test-1',
-      sequence_index: 1,
+      sequence_index: 2,
       start_time_ms: 4800,
       end_time_ms: 8200,
       duration_ms: 3400,
@@ -421,6 +421,108 @@ describe('ProjectDetailView Component & Blind Mode', () => {
     // Overview displays the updated text
     await waitFor(() => {
       expect(screen.getByText('Guten Tag, wie geht es Ihnen? (Persisted Edit)')).toBeInTheDocument();
+    });
+  });
+
+  /* =========================================================================
+     Regression Tests: Clip Selection & Shadow Button Mapping
+     ========================================================================= */
+
+  it('regression: clicking Shadow on clip #1 opens that exact clip, not the following clip', async () => {
+    render(
+      <ProjectDetailView
+        projectId="proj-test-1"
+        onBack={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Shadow clip #1/i })).toBeInTheDocument();
+    });
+
+    // Click Shadow on Clip #1
+    fireEvent.click(screen.getByRole('button', { name: /Shadow clip #1/i }));
+
+    // Must open Clip #1, NOT Clip #2
+    await waitFor(() => {
+      expect(screen.getByTestId('shadowing-player')).toBeInTheDocument();
+      expect(screen.getByText('Clip 1 / 2')).toBeInTheDocument();
+      expect(screen.getByText('Guten Tag, wie geht es Ihnen?')).toBeInTheDocument();
+      expect(screen.queryByText('Clip 2 / 2')).not.toBeInTheDocument();
+      expect(screen.queryByText('Mir geht es sehr gut, danke.')).not.toBeInTheDocument();
+    });
+  });
+
+  it('regression: in a 3-clip project with 1-based sequence numbers, clicking Shadow on clip #2 opens clip #2 and not clip #3', async () => {
+    const mockThreeClips: client.SegmentRead[] = [
+      {
+        id: 'clip-1',
+        project_id: 'proj-test-1',
+        sequence_index: 1,
+        start_time_ms: 1000,
+        end_time_ms: 3000,
+        duration_ms: 2000,
+        text: 'Erster deutscher Satz.',
+        raw_transcript: 'Erster deutscher Satz.',
+        is_edited: false,
+        recordings_count: 0,
+        created_at: '2026-10-28T10:00:00Z',
+        updated_at: '2026-10-28T10:05:00Z',
+      },
+      {
+        id: 'clip-2',
+        project_id: 'proj-test-1',
+        sequence_index: 2,
+        start_time_ms: 3200,
+        end_time_ms: 6000,
+        duration_ms: 2800,
+        text: 'Zweiter deutscher Satz.',
+        raw_transcript: 'Zweiter deutscher Satz.',
+        is_edited: false,
+        recordings_count: 0,
+        created_at: '2026-10-28T10:00:00Z',
+        updated_at: '2026-10-28T10:05:00Z',
+      },
+      {
+        id: 'clip-3',
+        project_id: 'proj-test-1',
+        sequence_index: 3,
+        start_time_ms: 6200,
+        end_time_ms: 9500,
+        duration_ms: 3300,
+        text: 'Dritter deutscher Satz.',
+        raw_transcript: 'Dritter deutscher Satz.',
+        is_edited: false,
+        recordings_count: 0,
+        created_at: '2026-10-28T10:00:00Z',
+        updated_at: '2026-10-28T10:05:00Z',
+      },
+    ];
+    vi.mocked(client.getProjectSegments).mockResolvedValue(mockThreeClips);
+
+    render(
+      <ProjectDetailView
+        projectId="proj-test-1"
+        onBack={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Shadow clip #2/i })).toBeInTheDocument();
+    });
+
+    // Click Shadow on Clip #2
+    fireEvent.click(screen.getByRole('button', { name: /Shadow clip #2/i }));
+
+    // Must open Clip #2, NOT Clip #3
+    await waitFor(() => {
+      expect(screen.getByTestId('shadowing-player')).toBeInTheDocument();
+      expect(screen.getByText('Clip 2 / 3')).toBeInTheDocument();
+      expect(screen.getByText('Zweiter deutscher Satz.')).toBeInTheDocument();
+      expect(screen.queryByText('Clip 3 / 3')).not.toBeInTheDocument();
+      expect(screen.queryByText('Dritter deutscher Satz.')).not.toBeInTheDocument();
     });
   });
 });

@@ -57,6 +57,15 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   );
 
   const [currentIndex, setCurrentIndex] = useState(safeInitialIndex);
+
+  // Synchronize currentIndex if initialSegmentIndex changes
+  useEffect(() => {
+    const clamped = Math.max(
+      0,
+      Math.min(initialSegmentIndex, Math.max(0, segments.length - 1))
+    );
+    setCurrentIndex(clamped);
+  }, [initialSegmentIndex, segments.length]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isMasked, setIsMasked] = useState(defaultBlindMode);
