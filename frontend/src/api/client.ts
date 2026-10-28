@@ -118,7 +118,8 @@ export async function getProject(id: string): Promise<ProjectDetail> {
 export async function importProject(
   file: File,
   title?: string,
-  whisperModel: string = 'base'
+  whisperModel: string = 'base',
+  signal?: AbortSignal
 ): Promise<ProjectImportResponse> {
   const formData = new FormData();
   formData.append('file', file);
@@ -131,6 +132,7 @@ export async function importProject(
   const res = await fetch(`${BASE_URL}/projects/import`, {
     method: 'POST',
     body: formData,
+    signal,
   });
   return handleResponse<ProjectImportResponse>(res);
 }

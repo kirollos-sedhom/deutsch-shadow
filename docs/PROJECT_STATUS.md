@@ -97,6 +97,17 @@
    - **Verification & Test Coverage:**
      - **38/38 automated tests passing** across `pytest` and `unittest` suites.
      - Real-audio integration verified on `data/sample.mp4` (`scripts/test_milestone4_real.py`).
+8. **Milestone 5 Recording Library, Import Interface & UX Stabilization (Verified):**
+   - **Frontend Stack:** React 18.3, TypeScript 5.7, Vite 6.4, Lucide-React, Vitest 5.0, Happy-DOM.
+   - **Design Foundation:** Clean, distraction-free slate palette (#090d16, #0f172a, #1e293b, #334155) with accessible semantic practice state tokens (Not Practiced, Difficult, Practiced, Mastered).
+   - **Non-Blocking Background Processing:** Separated file transfer from background transcription; import modal can be cancelled during upload or dismissed immediately upon job creation. Active background task banner keeps users informed while they browse other ready projects.
+   - **Asynchronous Retry API:** POST /api/projects/{id}/process executes asynchronously via BackgroundTasks with duplicate-job protection (returns immediately if already processing) and stale segment cleanup.
+   - **Restored Blind Listening:** Transcripts masked by default (ilter: blur(8px)), individual tap/click reveal, global Blind Mode toggle button, and keyboard shortcut (T) for distraction-free shadowing.
+   - **Mobile-First Responsive Layout:** Stacked clip cards replacing rigid desktop table; responsive navbar and cards down to 360px without horizontal overflow; accessible >=44px touch targets.
+   - **Automated Verification:**
+     - **13/13 frontend tests passing** via Vitest (100% pass rate).
+     - **41/41 backend tests passing** via pytest (100% pass rate).
+     - **TypeScript check and production build verified:** zero compilation or type errors.
 
 ---
 

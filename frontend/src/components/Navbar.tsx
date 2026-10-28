@@ -15,32 +15,41 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   return (
     <header className="navbar">
-      <div className="nav-brand" onClick={onNavigateHome} role="button" tabIndex={0}>
-        <Volume2 size={22} className="text-primary" style={{ color: 'var(--primary)' }} />
-        <span>Deutsch Shadow</span>
-        <span className="brand-badge">Milestone 5</span>
+      <div className="nav-brand-row">
+        <div
+          className="nav-brand"
+          onClick={onNavigateHome}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') onNavigateHome();
+          }}
+          aria-label="Deutsch Shadow Home"
+        >
+          <Volume2 size={20} style={{ color: 'var(--primary)' }} />
+          <span>Deutsch Shadow</span>
+          <span className="brand-badge">Local</span>
+        </div>
+
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={onOpenImport}
+          style={{ minHeight: 'var(--touch-target-min)' }}
+          aria-label="Import Media"
+        >
+          <Plus size={16} />
+          <span>Import</span>
+        </button>
       </div>
 
       <div className="nav-actions">
         {capabilities && (
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '12px',
-              color: 'var(--text-secondary)',
-              backgroundColor: 'rgba(15, 23, 42, 0.6)',
-              padding: '5px 10px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-            }}
-            title={`CPU: ${capabilities.cpu_physical_cores}c/${capabilities.cpu_logical_cores}t | RAM: ${capabilities.ram_total_gb.toFixed(1)} GB | Recommended model: ${capabilities.recommended_model}`}
+            className="hardware-chip"
+            title={`CPU: ${capabilities.cpu_physical_cores}c/${capabilities.cpu_logical_cores}t | RAM: ${capabilities.ram_total_gb.toFixed(1)} GB | Model: ${capabilities.recommended_model}`}
           >
-            <Cpu size={14} style={{ color: capabilities.cuda_available ? 'var(--success)' : 'var(--text-muted)' }} />
-            <span>
-              {capabilities.cuda_available ? 'GPU (CUDA)' : 'CPU Mode'}
-            </span>
+            <Cpu size={13} style={{ color: capabilities.cuda_available ? 'var(--status-mastered-text)' : 'var(--text-muted)' }} />
+            <span>{capabilities.cuda_available ? 'CUDA' : 'CPU'}</span>
             <span style={{ color: 'var(--text-muted)' }}>•</span>
             <span style={{ fontFamily: 'var(--font-mono)' }}>{capabilities.recommended_model}</span>
           </div>
@@ -53,14 +62,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="btn btn-secondary btn-sm"
           title="Open Milestone 3 Debugging Player on port 8080"
         >
-          <span>M3 Debug Player</span>
-          <ExternalLink size={13} />
+          <span>M3 Player</span>
+          <ExternalLink size={12} />
         </a>
-
-        <button className="btn btn-primary" onClick={onOpenImport}>
-          <Plus size={16} />
-          <span>Import Media</span>
-        </button>
       </div>
     </header>
   );

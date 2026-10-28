@@ -38,7 +38,7 @@ describe('ImportModal Component', () => {
     );
 
     expect(screen.getByText('Import German Media')).toBeInTheDocument();
-    expect(screen.getByText(/Click to choose a file or drag and drop here/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Whisper Transcription Model/i)).toBeInTheDocument();
+    expect(screen.getByText(/Choose a file or drag here/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Whisper Model Tier/i)).toBeInTheDocument();
   });
 });

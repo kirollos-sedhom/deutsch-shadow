@@ -90,3 +90,35 @@ def test_project_crud_lifecycle_for_frontend(client, tmp_path):
 
     not_found_resp = client.get(f"/api/projects/{project_id}")
     assert not_found_resp.status_code == 404
+
+
+def test_async_process_and_duplicate_protection(client):
+    """Verify asynchronous retry/process endpoint returns promptly and protects against duplicate jobs."""
+    # 1. Create a dummy project without auto-processing
+    wav_content = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+    files = {"file": ("async_test.wav", io.BytesIO(wav_content), "audio/wav")}
+    data = {"title": "Async Retry Test", "auto_process": "false"}
+    import_resp = client.post("/api/projects/import", files=files, data=data)
+    assert import_resp.status_code == 201
+    project_id = import_resp.json()["project_id"]
+
+    try:
+        # 2. Trigger process endpoint -> should return immediately with status='processing'
+        process_resp = client.post(f"/api/projects/{project_id}/process")
+        assert process_resp.status_code == 200
+        proj_detail = process_resp.json()
+        assert proj_detail["status"] == "processing"
+
+        # 3. Duplicate protection: Triggering process again while already processing must return cleanly
+        dup_resp = client.post(f"/api/projects/{project_id}/process")
+        assert dup_resp.status_code == 200
+        assert dup_resp.json()["status"] == "processing"
+
+        # 4. Processing a non-existent project returns 404
+        bad_resp = client.post("/api/projects/non-existent-uuid/process")
+        assert bad_resp.status_code == 404
+
+    finally:
+        # Clean up
+        client.delete(f"/api/projects/{project_id}")
+

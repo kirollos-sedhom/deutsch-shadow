@@ -15,6 +15,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db.session import get_db, AsyncSessionLocal
+from backend.app.db.models import Project
 from backend.app.schemas.project import (
     ProjectDetail,
     ProjectImportResponse,
@@ -102,14 +103,33 @@ async def get_project(
     "/{project_id}/process",
     response_model=ProjectDetail,
     status_code=status.HTTP_200_OK,
-    summary="Run or retry audio processing pipeline synchronously",
+    summary="Run or retry audio processing pipeline asynchronously",
 )
 async def process_project(
     project_id: str,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
 ) -> ProjectDetail:
-    """Execute pipeline processing synchronously and return updated project detail."""
-    await ProjectService.process_project_pipeline(session, project_id)
+    """Trigger background audio processing/retry pipeline and return current project detail promptly."""
+    project = await session.get(Project, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{project_id}' not found",
+        )
+
+    # Duplicate job protection: do not spin up a second pipeline if already processing
+    if project.status == "processing":
+        return await ProjectService.get_project_detail(session, project_id)
+
+    # Set status to processing and clear previous error
+    project.status = "processing"
+    project.error_message = None
+    await session.commit()
+
+    # Queue pipeline execution in background
+    background_tasks.add_task(run_pipeline_in_background, project.id)
+
     return await ProjectService.get_project_detail(session, project_id)
 
 

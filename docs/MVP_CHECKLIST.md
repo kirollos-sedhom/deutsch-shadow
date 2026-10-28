@@ -118,16 +118,26 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
     - Support drag-and-drop or file browsing for audio/video files.
     - Display upload and transcription progress indicators.
     - Hardware-aware model selection option (e.g. `base` vs. `small`).
+  - [x] **Milestone 5 UX & Architecture Stabilization**:
+    - Design foundation with dark slate palette and semantic practice state tokens.
+    - Mobile-first responsive layout down to 360px without horizontal overflow.
+    - Non-blocking background imports with dismissible modal, cancellation, and active task banner.
+    - Asynchronous retry API endpoint with duplicate-job protection.
+    - Responsive stacked clip cards replacing rigid desktop table.
+    - Restored pedagogical blind listening (blurred by default, tap/click reveal, global toggle, shortcut `T`).
 - **Testing Requirements:**
-  - Frontend component tests (Vitest / React Testing Library) for import file validation and library rendering:
+  - Frontend component tests (Vitest / React Testing Library):
     - [x] `src/utils/formatters.test.ts` (4 unit tests passing).
     - [x] `src/components/ProjectList.test.tsx` (2 component tests passing).
     - [x] `src/components/ImportModal.test.tsx` (2 component tests passing).
-  - End-to-end integration test: uploading a German audio file through the UI, observing progress, and navigating to the created project:
-    - [x] `backend/tests/test_milestone5_frontend_integration.py` (2 integration tests passing).
+    - [x] `src/components/ProjectDetailView.test.tsx` (5 component tests covering blind mode, tap reveal, global toggle, and shortcut `T`).
+  - End-to-end and API integration tests:
+    - [x] `backend/tests/test_milestone5_frontend_integration.py` (3 integration tests passing, including async retry & duplicate protection).
     - [x] Live E2E test `scripts/verify_milestone5_e2e.py` on real audio with live background polling and HTTP 206 streaming verification passing.
 - **Completion Criteria:**
-  - [x] User can launch the web interface, upload a German audio file, view transcription progress, and see the processed project in the library.
+  - [x] User can launch the web interface, upload a German audio file, view non-blocking transcription progress, and see the processed project in the library.
+  - [x] Restored blind listening with blurred German text and tap-to-reveal.
+  - [x] Fully responsive across mobile (360px, 375px, 412px) and desktop.
 
 ---
 

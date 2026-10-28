@@ -137,6 +137,9 @@ class ProjectService:
             project.master_audio_path = settings.to_relative_path(working_audio)
             project.duration_seconds = float(result.media_metadata.duration_s)
 
+            # Clear any pre-existing segments if re-processing / retrying
+            await session.execute(delete(Segment).where(Segment.project_id == project.id))
+
             # Populate segments
             for seg in result.practice_segments:
                 db_seg = Segment(

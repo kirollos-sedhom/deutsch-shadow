@@ -16,8 +16,8 @@ describe('ProjectList Component', () => {
       />
     );
 
-    expect(screen.getByText('No Audio or Video Projects Found')).toBeInTheDocument();
-    expect(screen.getByText('Import Your First File')).toBeInTheDocument();
+    expect(screen.getByText('No Media Imported')).toBeInTheDocument();
+    expect(screen.getByText('Import First File')).toBeInTheDocument();
   });
 
   it('renders project cards with metadata and handles clicks', () => {
@@ -53,8 +53,8 @@ describe('ProjectList Component', () => {
     expect(screen.getByText('German News Broadcast')).toBeInTheDocument();
     expect(screen.getByText('tagesschau.mp4')).toBeInTheDocument();
     expect(screen.getByText('02:05')).toBeInTheDocument();
-    expect(screen.getByText('24 segments')).toBeInTheDocument();
-    expect(screen.getByText('● Ready')).toBeInTheDocument();
+    expect(screen.getByText('24 clips')).toBeInTheDocument();
+    expect(screen.getByText('Ready')).toBeInTheDocument();
 
     // Trigger select
     fireEvent.click(screen.getByText('German News Broadcast'));

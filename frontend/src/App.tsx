@@ -15,7 +15,13 @@ import {
   getSystemCapabilities,
   getWhisperModels,
 } from './api/client';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Loader2, X } from 'lucide-react';
+
+interface BackgroundNotification {
+  projectId: string;
+  title: string;
+  whisperModel: string;
+}
 
 export const App: React.FC = () => {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -32,6 +38,9 @@ export const App: React.FC = () => {
   const [isSubmittingImport, setIsSubmittingImport] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<ProjectSummary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Background active job notification
+  const [backgroundNotification, setBackgroundNotification] = useState<BackgroundNotification | null>(null);
 
   // Fetch initial data
   const loadProjects = useCallback(async () => {
@@ -69,7 +78,17 @@ export const App: React.FC = () => {
     const hasActiveProcessing = projects.some(
       (p) => p.status === 'pending' || p.status === 'processing'
     );
-    if (!hasActiveProcessing) return;
+    if (!hasActiveProcessing) {
+      if (backgroundNotification) {
+        // Automatically clear background notification when all jobs finish
+        const matchingProject = projects.find((p) => p.id === backgroundNotification.projectId);
+        if (matchingProject && (matchingProject.status === 'ready' || matchingProject.status === 'failed')) {
+          const timer = setTimeout(() => setBackgroundNotification(null), 4000);
+          return () => clearTimeout(timer);
+        }
+      }
+      return;
+    }
 
     const interval = setInterval(async () => {
       try {
@@ -81,15 +100,20 @@ export const App: React.FC = () => {
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [projects]);
+  }, [projects, backgroundNotification]);
 
   // Handlers
-  const handleImport = async (file: File, title: string, model: string) => {
+  const handleImport = async (file: File, title: string, model: string, signal?: AbortSignal) => {
     setIsSubmittingImport(true);
     try {
-      await importProject(file, title, model);
+      const res = await importProject(file, title, model, signal);
       await loadProjects();
       setIsImportOpen(false);
+      setBackgroundNotification({
+        projectId: res.project_id,
+        title: res.title || file.name,
+        whisperModel: model,
+      });
     } finally {
       setIsSubmittingImport(false);
     }
@@ -97,12 +121,19 @@ export const App: React.FC = () => {
 
   const handleRetryProcess = async (projectId: string) => {
     try {
-      // Optimistically update status to processing
       setProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, status: 'processing' } : p))
       );
       await processProject(projectId);
       await loadProjects();
+      const proj = projects.find((p) => p.id === projectId);
+      if (proj) {
+        setBackgroundNotification({
+          projectId,
+          title: proj.title,
+          whisperModel: proj.whisper_model,
+        });
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Retry failed');
       await loadProjects();
@@ -117,6 +148,9 @@ export const App: React.FC = () => {
       setProjects((prev) => prev.filter((p) => p.id !== projectToDelete.id));
       if (selectedProjectId === projectToDelete.id) {
         setSelectedProjectId(null);
+      }
+      if (backgroundNotification?.projectId === projectToDelete.id) {
+        setBackgroundNotification(null);
       }
       setProjectToDelete(null);
     } catch (err: unknown) {
@@ -151,8 +185,27 @@ export const App: React.FC = () => {
       />
 
       <main className="main-content">
+        {backgroundNotification && (
+          <div className="background-task-bar" role="status">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <Loader2 size={15} className="spin" style={{ color: 'var(--primary)', flexShrink: 0 }} />
+              <span style={{ wordBreak: 'break-word', fontSize: '12px' }}>
+                Transcribing <strong>{backgroundNotification.title}</strong> in background ({backgroundNotification.whisperModel}). You can continue using other projects.
+              </span>
+            </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setBackgroundNotification(null)}
+              style={{ minHeight: '32px', padding: '4px 8px', flexShrink: 0 }}
+              aria-label="Dismiss notification"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {error && (
-          <div className="alert-banner alert-error">
+          <div className="alert-banner alert-error" role="alert">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <AlertCircle size={16} />
               <span>{error}</span>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   ArrowLeft,
   Layers,
@@ -11,6 +11,8 @@ import {
   Loader2,
   AlertCircle,
   Volume2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   ProjectDetail,
@@ -39,6 +41,10 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Blind Listening State
+  const [isBlindMode, setIsBlindMode] = useState(true);
+  const [revealedSegmentIds, setRevealedSegmentIds] = useState<Set<string>>(new Set());
+
   // Playback state
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -47,10 +53,13 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const segmentStopTimeoutRef = useRef<number | null>(null);
 
   // Load project & segments
-  const fetchProjectData = async () => {
+  const fetchProjectData = useCallback(async () => {
     try {
       const p = await getProject(projectId);
       setProject(p);
+      if (p.settings?.blind_mode_default !== undefined) {
+        setIsBlindMode(p.settings.blind_mode_default);
+      }
 
       if (p.status === 'ready') {
         const segs = await getProjectSegments(projectId);
@@ -62,11 +71,13 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [projectId]);
 
   useEffect(() => {
     fetchProjectData();
-  }, [projectId]);
+    // Reset revealed clips when project changes
+    setRevealedSegmentIds(new Set());
+  }, [fetchProjectData]);
 
   // Polling if processing
   useEffect(() => {
@@ -81,8 +92,10 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         if (updated.status === 'ready') {
           const segs = await getProjectSegments(projectId);
           setSegments(segs);
+          setIsProcessing(false);
           clearInterval(interval);
         } else if (updated.status === 'failed') {
+          setIsProcessing(false);
           clearInterval(interval);
         }
       } catch {
@@ -93,21 +106,66 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     return () => clearInterval(interval);
   }, [projectId, project?.status]);
 
-  // Handle retry
+  // Handle asynchronous retry
   const handleRetry = async () => {
     setIsProcessing(true);
     try {
       const updated = await processProject(projectId);
       setProject(updated);
-      const segs = await getProjectSegments(projectId);
-      setSegments(segs);
       setError(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Processing failed');
-    } finally {
+      setError(err instanceof Error ? err.message : 'Retry failed');
       setIsProcessing(false);
     }
   };
+
+  // Toggle reveal for individual segment
+  const toggleSegmentReveal = (segmentId: string) => {
+    setRevealedSegmentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(segmentId)) {
+        next.delete(segmentId);
+      } else {
+        next.add(segmentId);
+      }
+      return next;
+    });
+  };
+
+  // Toggle global blind mode
+  const toggleGlobalBlindMode = () => {
+    if (isBlindMode) {
+      // Switch to unmasked
+      setIsBlindMode(false);
+    } else {
+      // Switch to masked & clear individually revealed clips
+      setIsBlindMode(true);
+      setRevealedSegmentIds(new Set());
+    }
+  };
+
+  // Keyboard shortcut listener ('T' key toggles reveal)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in form inputs
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        if (activeSegmentId) {
+          toggleSegmentReveal(activeSegmentId);
+        } else {
+          toggleGlobalBlindMode();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeSegmentId, isBlindMode]);
 
   // Play specific segment
   const playSegment = (segment: SegmentRead) => {
@@ -148,7 +206,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   if (isLoading) {
     return (
       <div className="empty-state">
-        <Loader2 size={36} className="spin empty-state-icon" style={{ color: 'var(--primary)' }} />
+        <Loader2 size={32} className="spin empty-state-icon" style={{ color: 'var(--primary)' }} />
         <h3 className="empty-state-title">Loading Project...</h3>
       </div>
     );
@@ -157,11 +215,11 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   if (error || !project) {
     return (
       <div>
-        <button className="detail-nav-back" onClick={onBack} style={{ marginBottom: '16px' }}>
+        <button className="detail-nav-back" onClick={onBack}>
           <ArrowLeft size={16} />
           <span>Back to Library</span>
         </button>
-        <div className="alert-banner alert-error">
+        <div className="alert-banner alert-error" role="alert">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertCircle size={16} />
             <span>{error || 'Project not found.'}</span>
@@ -176,46 +234,48 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   return (
     <div>
       <div className="detail-header">
-        <button className="detail-nav-back" onClick={onBack}>
+        <button className="detail-nav-back" onClick={onBack} aria-label="Back to Library">
           <ArrowLeft size={16} />
           <span>Back to Library</span>
         </button>
 
         <div className="detail-title-row">
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--text-secondary)' }}>
-                {isVideo ? <FileVideo size={24} /> : <FileAudio size={24} />}
+                {isVideo ? <FileVideo size={20} /> : <FileAudio size={20} />}
               </span>
-              <h1 className="section-title" style={{ fontSize: '24px' }}>
+              <h1 className="section-title" style={{ wordBreak: 'break-word' }}>
                 {project.title}
               </h1>
               <span className={`badge badge-${project.status}`}>
-                {project.status === 'processing' && <Loader2 size={12} className="spin" />}
+                {project.status === 'processing' && <Loader2 size={11} className="spin" />}
                 {project.status}
               </span>
             </div>
-            <div className="project-filename" style={{ marginTop: '6px' }}>
-              Original File: {project.original_filename} • Added: {formatDate(project.created_at)}
+            <div className="project-filename" style={{ marginTop: '4px' }}>
+              {project.original_filename} • Added: {formatDate(project.created_at)}
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
             {project.status === 'failed' && (
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={handleRetry}
                 disabled={isProcessing}
+                aria-label="Retry pipeline"
               >
-                <RefreshCw size={14} className={isProcessing ? 'spin' : ''} />
-                <span>{isProcessing ? 'Processing...' : 'Retry Pipeline'}</span>
+                <RefreshCw size={13} className={isProcessing ? 'spin' : ''} />
+                <span>{isProcessing ? 'Retrying...' : 'Retry'}</span>
               </button>
             )}
             <button
               className="btn btn-danger btn-sm"
               onClick={() => onDelete(project.id, project.title)}
+              aria-label="Delete project"
             >
-              <Trash2 size={14} />
+              <Trash2 size={13} />
               <span>Delete</span>
             </button>
           </div>
@@ -223,23 +283,23 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
         <div className="detail-stats-bar">
           <div className="stat-box">
-            <div className="stat-label">Total Duration</div>
+            <div className="stat-label">Duration</div>
             <div className="stat-value">
               {project.duration_seconds > 0 ? formatDuration(project.duration_seconds) : '—'}
             </div>
           </div>
           <div className="stat-box">
-            <div className="stat-label">Practice Segments</div>
+            <div className="stat-label">Clips</div>
             <div className="stat-value">{segments.length || project.segments_count}</div>
           </div>
           <div className="stat-box">
-            <div className="stat-label">Whisper Model</div>
+            <div className="stat-label">Model</div>
             <div className="stat-value" style={{ textTransform: 'uppercase' }}>
               {project.whisper_model}
             </div>
           </div>
           <div className="stat-box">
-            <div className="stat-label">Playback Speed</div>
+            <div className="stat-label">Speed</div>
             <div className="stat-value">
               {project.settings?.playback_speed ? `${project.settings.playback_speed}x` : '1.0x'}
             </div>
@@ -248,21 +308,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
       </div>
 
       {project.status === 'processing' && (
-        <div className="alert-banner alert-info" style={{ marginBottom: '24px' }}>
+        <div className="alert-banner alert-info" role="status">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Loader2 size={16} className="spin" />
+            <Loader2 size={14} className="spin" />
             <span>
-              Transcribing German speech and detecting natural sentence boundaries... This page will update automatically when ready.
+              Transcribing audio and detecting sentence boundaries in background... This page updates automatically.
             </span>
           </div>
         </div>
       )}
 
       {project.status === 'failed' && (
-        <div className="alert-banner alert-error" style={{ marginBottom: '24px' }}>
+        <div className="alert-banner alert-error" role="alert">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <AlertCircle size={16} />
-            <span>Pipeline Error: {project.error_message || 'Speech recognition pipeline encountered an unexpected error.'}</span>
+            <AlertCircle size={14} />
+            <span>Error: {project.error_message || 'Transcription pipeline failed.'}</span>
           </div>
         </div>
       )}
@@ -270,12 +330,12 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
       {project.status === 'ready' && (
         <>
           <div className="audio-player-container">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}>
-                <Volume2 size={16} color="var(--primary)" />
-                <span>Master Audio Player (HTTP Range Streaming)</span>
+            <div className="audio-player-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600 }}>
+                <Volume2 size={15} color="var(--primary)" />
+                <span>Master Audio</span>
               </div>
-              <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+              <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
                 {formatDuration(currentTime)} / {formatDuration(project.duration_seconds)}
               </div>
             </div>
@@ -285,80 +345,100 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               src={getMasterAudioUrl(project.id)}
               controls
               className="audio-element"
-              style={{ width: '100%' }}
               onTimeUpdate={handleTimeUpdate}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
             />
           </div>
 
-          <div className="segments-container">
-            <div className="segments-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Layers size={16} color="var(--primary)" />
-                <span style={{ fontWeight: 600, fontSize: '14px' }}>Practice Segments ({segments.length})</span>
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Click a segment's play button to practice on-demand
-              </div>
+          <div className="clips-section-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Layers size={16} color="var(--primary)" />
+              <span style={{ fontWeight: 600, fontSize: '14px' }}>
+                Practice Clips ({segments.length})
+              </span>
             </div>
 
-            {segments.length === 0 ? (
-              <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No speech segments detected in this file.
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="segments-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '60px' }}>#</th>
-                      <th style={{ width: '170px' }}>Time Range</th>
-                      <th style={{ width: '90px' }}>Duration</th>
-                      <th>German Transcript</th>
-                      <th style={{ width: '110px', textAlign: 'right' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {segments.map((segment) => {
-                      const isActive = activeSegmentId === segment.id;
-                      return (
-                        <tr
-                          key={segment.id}
-                          style={{
-                            backgroundColor: isActive ? 'rgba(56, 189, 248, 0.1)' : undefined,
-                          }}
-                        >
-                          <td style={{ fontWeight: 600, color: 'var(--text-muted)' }}>
-                            #{segment.sequence_index + 1}
-                          </td>
-                          <td className="timestamp-mono">
-                            {formatMs(segment.start_time_ms)} → {formatMs(segment.end_time_ms)}
-                          </td>
-                          <td className="timestamp-mono" style={{ color: 'var(--text-secondary)' }}>
-                            {(segment.duration_ms / 1000).toFixed(2)}s
-                          </td>
-                          <td className="transcript-german">
-                            {segment.text}
-                          </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <button
-                              className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => playSegment(segment)}
-                              title="Play this speech segment"
-                            >
-                              {isActive && isPlaying ? <Pause size={12} /> : <Play size={12} />}
-                              <span>{isActive && isPlaying ? 'Playing' : 'Play'}</span>
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <button
+              className={`blind-mode-toggle-btn ${isBlindMode ? 'active' : ''}`}
+              onClick={toggleGlobalBlindMode}
+              title="Toggle Blind Listening (Shortcut: T)"
+              aria-label="Toggle blind listening mode"
+            >
+              {isBlindMode ? <EyeOff size={14} /> : <Eye size={14} />}
+              <span>{isBlindMode ? 'Blind Mode: ON (Masked)' : 'Blind Mode: OFF (Revealed)'}</span>
+            </button>
           </div>
+
+          {segments.length === 0 ? (
+            <div className="empty-state">
+              <p className="empty-state-desc">No speech clips recognized in this audio.</p>
+            </div>
+          ) : (
+            <div className="clips-list">
+              {segments.map((segment) => {
+                const isActive = activeSegmentId === segment.id;
+                const isRevealed = !isBlindMode || revealedSegmentIds.has(segment.id);
+
+                return (
+                  <div
+                    key={segment.id}
+                    className={`clip-card ${isActive ? 'active-playback' : ''}`}
+                  >
+                    <div className="clip-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="clip-index">#{segment.sequence_index + 1}</span>
+                        <span className="clip-timing">
+                          {formatMs(segment.start_time_ms)} → {formatMs(segment.end_time_ms)}
+                        </span>
+                      </div>
+                      <span className="clip-duration">
+                        {(segment.duration_ms / 1000).toFixed(2)}s
+                      </span>
+                    </div>
+
+                    <div className="clip-transcript-wrapper">
+                      <div
+                        className={`transcript-text ${isRevealed ? 'revealed' : 'masked'}`}
+                        onClick={() => toggleSegmentReveal(segment.id)}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={isRevealed ? 'German transcript (tap to mask)' : 'Masked German transcript (tap to reveal)'}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') toggleSegmentReveal(segment.id);
+                        }}
+                      >
+                        {segment.text}
+                      </div>
+                      {!isRevealed && (
+                        <div className="masked-hint">Tap text or Reveal button to unmask</div>
+                      )}
+                    </div>
+
+                    <div className="clip-actions">
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => toggleSegmentReveal(segment.id)}
+                        aria-label={isRevealed ? 'Hide transcript' : 'Reveal transcript'}
+                      >
+                        {isRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
+                        <span>{isRevealed ? 'Hide' : 'Reveal'}</span>
+                      </button>
+
+                      <button
+                        className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => playSegment(segment)}
+                        aria-label={`Play clip #${segment.sequence_index + 1}`}
+                      >
+                        {isActive && isPlaying ? <Pause size={12} /> : <Play size={12} />}
+                        <span>{isActive && isPlaying ? 'Playing' : 'Play'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
     </div>

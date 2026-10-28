@@ -8,7 +8,7 @@ interface ImportModalProps {
   recommendedModel: string;
   isSubmitting: boolean;
   onClose: () => void;
-  onSubmit: (file: File, title: string, model: string) => Promise<void>;
+  onSubmit: (file: File, title: string, model: string, signal?: AbortSignal) => Promise<void>;
 }
 
 const SUPPORTED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.mp4', '.aac', '.ogg', '.flac', '.webm', '.mkv'];
@@ -27,6 +27,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   if (!isOpen) return null;
 
@@ -42,7 +43,6 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
     setSelectedFile(file);
     if (!customTitle) {
-      // Default title without extension
       const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
       setCustomTitle(nameWithoutExt);
     }
@@ -65,6 +65,15 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLocalError(null);
+    onClose();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFile) {
@@ -72,25 +81,40 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       return;
     }
 
+    setLocalError(null);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      await onSubmit(selectedFile, customTitle, selectedModel);
-      // reset form
+      await onSubmit(selectedFile, customTitle, selectedModel, controller.signal);
+      // Reset form on success
       setSelectedFile(null);
       setCustomTitle('');
+      abortControllerRef.current = null;
       onClose();
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // Upload cancelled by user
+        return;
+      }
       setLocalError(err instanceof Error ? err.message : 'Import failed');
+    } finally {
+      abortControllerRef.current = null;
     }
   };
 
   const isVideo = selectedFile?.name.match(/\.(mp4|webm|mkv)$/i);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleCancel}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 className="modal-title">Import German Media</h3>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={isSubmitting}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleCancel}
+            aria-label="Close modal"
+          >
             <X size={16} />
           </button>
         </div>
@@ -98,7 +122,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             {localError && (
-              <div className="alert-banner alert-error">
+              <div className="alert-banner alert-error" role="alert">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <AlertCircle size={16} />
                   <span>{localError}</span>
@@ -114,6 +138,12 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
+                tabIndex={0}
+                role="button"
+                aria-label="Upload file area"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
+                }}
               >
                 <input
                   type="file"
@@ -126,19 +156,19 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 {selectedFile ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                     {isVideo ? <FileVideo size={36} color="var(--primary)" /> : <FileAudio size={36} color="var(--primary)" />}
-                    <div style={{ fontWeight: 600, fontSize: '14px' }}>{selectedFile.name}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Click or drop another file to replace
+                    <div style={{ fontWeight: 600, fontSize: '13px', wordBreak: 'break-all' }}>{selectedFile.name}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Tap to replace
                     </div>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                    <Upload size={32} color="var(--text-muted)" />
+                    <Upload size={28} color="var(--text-muted)" />
                     <div style={{ fontWeight: 500, fontSize: '13px' }}>
-                      Click to choose a file or drag and drop here
+                      Choose a file or drag here
                     </div>
                     <div className="form-hint">
-                      Supported formats: MP3, WAV, M4A, MP4, AAC, OGG, FLAC, WEBM, MKV
+                      MP3, WAV, M4A, MP4, AAC, OGG, FLAC, WEBM, MKV
                     </div>
                   </div>
                 )}
@@ -163,7 +193,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" htmlFor="whisper-model">
-                Whisper Transcription Model
+                Whisper Model Tier
               </label>
               <select
                 id="whisper-model"
@@ -175,16 +205,15 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 {models.length > 0 ? (
                   models.map((m) => (
                     <option key={m.name} value={m.name}>
-                      {m.name.toUpperCase()} ({m.size_mb} MB) — {m.description}
-                      {m.name === recommendedModel ? ' [Recommended]' : ''}
+                      {m.name.toUpperCase()} ({m.size_mb} MB) {m.name === recommendedModel ? '— Recommended' : ''}
                     </option>
                   ))
                 ) : (
                   <>
-                    <option value="tiny">TINY (75 MB) — Fastest, lowest memory</option>
-                    <option value="base">BASE (145 MB) — Balanced for German [Recommended]</option>
-                    <option value="small">SMALL (480 MB) — Higher accuracy</option>
-                    <option value="medium">MEDIUM (1500 MB) — Very high accuracy</option>
+                    <option value="tiny">TINY (75 MB)</option>
+                    <option value="base">BASE (145 MB) — Recommended</option>
+                    <option value="small">SMALL (480 MB)</option>
+                    <option value="medium">MEDIUM (1500 MB)</option>
                   </>
                 )}
               </select>
@@ -198,8 +227,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={onClose}
-              disabled={isSubmitting}
+              onClick={handleCancel}
             >
               Cancel
             </button>
@@ -211,7 +239,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
               {isSubmitting ? (
                 <>
                   <Loader2 size={14} className="spin" />
-                  <span>Importing & Processing...</span>
+                  <span>Uploading File...</span>
                 </>
               ) : (
                 <>
