@@ -1259,5 +1259,120 @@ describe('ShadowingPlayer Component', () => {
 
       vi.useRealTimers();
     });
+
+    it('decreases countdown monotonically and ignores repeated timeupdate events at boundary without resetting', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      fireEvent.click(screen.getByRole('button', { name: /^play clip$/i }));
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Reach boundary (pause is 3500ms * 1.2 = 4200ms -> 4.2s)
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+      expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+      expect(screen.getByText(/repeat aloud: 4\.2s/i)).toBeInTheDocument();
+
+      // Advance by 400ms: countdown must decrease to 3.8s
+      await vi.advanceTimersByTimeAsync(400);
+      expect(screen.getByText(/repeat aloud: 3\.8s/i)).toBeInTheDocument();
+
+      // Simulate real browser: queued / seek timeupdate events arrive while paused at boundary
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+      fireEvent.timeUpdate(audioEl);
+
+      // Countdown must NOT have reset back to 4.2s; it should remain at 3.8s
+      expect(screen.queryByText(/repeat aloud: 4\.2s/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/repeat aloud: 3\.8s/i)).toBeInTheDocument();
+
+      // Advance by another 500ms: countdown decreases to 3.3s
+      await vi.advanceTimersByTimeAsync(500);
+      expect(screen.getByText(/repeat aloud: 3\.3s/i)).toBeInTheDocument();
+
+      // Another late timeupdate does not reset
+      fireEvent.timeUpdate(audioEl);
+      expect(screen.getByText(/repeat aloud: 3\.3s/i)).toBeInTheDocument();
+
+      vi.useRealTimers();
+    });
+
+    it('executes multiple continuous loop cycles seamlessly', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const playSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      fireEvent.click(screen.getByRole('button', { name: /^play clip$/i }));
+      await vi.advanceTimersByTimeAsync(10);
+
+      // --- Cycle 1 ---
+      // Reach boundary
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+      expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+      expect(screen.getByText(/repeat aloud: 4\.2s/i)).toBeInTheDocument();
+
+      playSpy.mockClear();
+
+      // Expire countdown for Cycle 1 (4200ms)
+      await vi.advanceTimersByTimeAsync(4300);
+
+      // Cycle 1 finished: rewound to 1.0s and play() called
+      expect(audioEl.currentTime).toBe(1.0);
+      expect(playSpy).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('countdown-card')).not.toBeInTheDocument();
+
+      // Allow play().then() resolution
+      await vi.advanceTimersByTimeAsync(10);
+      expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+
+      // --- Cycle 2 ---
+      // Advance to boundary again during cycle 2
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+
+      // Cycle 2 countdown should now be active
+      expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+      expect(screen.getByText(/repeat aloud: 4\.2s/i)).toBeInTheDocument();
+
+      playSpy.mockClear();
+
+      // Expire countdown for Cycle 2
+      await vi.advanceTimersByTimeAsync(4300);
+
+      // Cycle 2 finished: rewound to 1.0s and play() called again
+      expect(audioEl.currentTime).toBe(1.0);
+      expect(playSpy).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('countdown-card')).not.toBeInTheDocument();
+
+      vi.useRealTimers();
+    });
   });
 });

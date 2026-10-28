@@ -270,12 +270,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         .play()
         .then(() => {
           if (playRequestIdRef.current !== currentRequestId) return;
+          isPlayingRef.current = true;
           setIsPlaying(true);
           scheduleStopTimer(endTimeSec);
         })
         .catch((err) => {
           if (playRequestIdRef.current !== currentRequestId) return;
           console.error('Auto-pause loop replay error:', err);
+          isPlayingRef.current = false;
           setIsPlaying(false);
         });
     }
@@ -435,16 +437,21 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const stopPlaybackAtBoundary = useCallback(
     (endTimeSec?: number, isBoundaryEnd: boolean = false) => {
       clearStopTimer();
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+
       if (audioRef.current) {
         audioRef.current.pause();
-        if (endTimeSec !== undefined) {
+        if (endTimeSec !== undefined && Math.abs(audioRef.current.currentTime - endTimeSec) > 0.001) {
           audioRef.current.currentTime = endTimeSec;
         }
       }
-      setIsPlaying(false);
 
       // If Loop Mode is enabled and we reached the boundary end, transition to countdown
       if (isBoundaryEnd && isLoopModeRef.current) {
+        // Prevent re-entrant countdown reset if already counting down
+        if (countdownStateRef.current.isActive) return;
+
         const clipDurationMs = Math.max(MIN_CLIP_DURATION_MS, activeEndMs - activeStartMs);
         const speed = playbackSpeedRef.current || 1.0;
         const multiplier = pauseMultiplierRef.current || 1.2;
@@ -492,6 +499,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     if (isPlayingRef.current) {
       clearStopTimer();
       audio.pause();
+      isPlayingRef.current = false;
       setIsPlaying(false);
       return;
     }
@@ -513,12 +521,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       .play()
       .then(() => {
         if (playRequestIdRef.current !== currentRequestId) return;
+        isPlayingRef.current = true;
         setIsPlaying(true);
         scheduleStopTimer(endTimeSec);
       })
       .catch((err) => {
         if (playRequestIdRef.current !== currentRequestId) return;
         console.error('Audio playback error:', err);
+        isPlayingRef.current = false;
         setIsPlaying(false);
       });
   }, [
@@ -548,12 +558,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       .play()
       .then(() => {
         if (playRequestIdRef.current !== currentRequestId) return;
+        isPlayingRef.current = true;
         setIsPlaying(true);
         scheduleStopTimer(endTimeSec);
       })
       .catch((err) => {
         if (playRequestIdRef.current !== currentRequestId) return;
         console.error('Audio replay error:', err);
+        isPlayingRef.current = false;
         setIsPlaying(false);
       });
   }, [activeStartMs, activeEndMs, cancelCountdown, clearStopTimer, currentSegment, scheduleStopTimer]);
@@ -575,12 +587,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       .play()
       .then(() => {
         if (playRequestIdRef.current !== currentRequestId) return;
+        isPlayingRef.current = true;
         setIsPlaying(true);
         scheduleStopTimer(endTimeSec);
       })
       .catch((err) => {
         if (playRequestIdRef.current !== currentRequestId) return;
         console.error('Preview playback error:', err);
+        isPlayingRef.current = false;
         setIsPlaying(false);
       });
   }, [cancelCountdown, clearStopTimer, draftStartMs, draftEndMs, scheduleStopTimer]);
@@ -603,6 +617,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
     }
+    isPlayingRef.current = false;
     setIsPlaying(false);
   }, [cancelCountdown, clearStopTimer]);
 
@@ -762,6 +777,9 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Audio event listeners
   const handleTimeUpdate = () => {
     if (!audioRef.current || !currentSegment) return;
+    if (!isPlayingRef.current) return;
+    if (countdownStateRef.current.isActive) return;
+
     const current = audioRef.current.currentTime;
     const endTimeSec = activeEndMs / 1000;
     if (current >= endTimeSec) {
@@ -771,14 +789,17 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
 
   const handleAudioPause = () => {
     clearStopTimer();
+    isPlayingRef.current = false;
     setIsPlaying(false);
   };
 
   const handleAudioPlay = () => {
+    isPlayingRef.current = true;
     setIsPlaying(true);
   };
 
   const handleAudioEnded = () => {
+    if (countdownStateRef.current.isActive) return;
     stopPlaybackAtBoundary(activeEndMs / 1000, true);
   };
 
