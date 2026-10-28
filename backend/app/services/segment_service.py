@@ -201,6 +201,21 @@ class SegmentService:
                 ),
             )
 
+        # Safeguard: Prevent splitting a segment that has existing vocal recordings
+        rec_count_stmt = select(func.count(Recording.id)).where(
+            Recording.segment_id == segment_id
+        )
+        rec_count = (await session.execute(rec_count_stmt)).scalar_one()
+        if rec_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Cannot split segment #{seg.sequence_index}: it has {rec_count} existing "
+                    f"vocal recording(s). Delete existing recordings before splitting to prevent data loss "
+                    f"or audio-transcript mismatch."
+                ),
+            )
+
         original_end = seg.end_time_ms
         original_seq = seg.sequence_index
         project_id = seg.project_id

@@ -1,6 +1,8 @@
 """User recording persistence, storage path management, and take sequencing service."""
 
 from __future__ import annotations
+import asyncio
+import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -40,6 +42,7 @@ class RecordingService:
     """Service handling audio take persistence, validation, streaming paths, and deletion."""
 
     _probe: Optional[MediaProbe] = None
+    _take_lock: asyncio.Lock = asyncio.Lock()
 
     @classmethod
     def get_probe(cls) -> MediaProbe:
@@ -107,7 +110,7 @@ class RecordingService:
         total_bytes = 0
 
         try:
-            with open(temp_fd, "wb") as temp_file:
+            with os.fdopen(temp_fd, "wb") as temp_file:
                 while True:
                     chunk = await upload_file.read(CHUNK_SIZE_BYTES)
                     if not chunk:
@@ -184,31 +187,32 @@ class RecordingService:
 
         # 7. Atomic SQLite transaction: calculate take_number, deactivate siblings, insert take
         try:
-            # Determine next sequential take number
-            max_take_stmt = select(func.max(Recording.take_number)).where(
-                Recording.segment_id == segment_id
-            )
-            max_take = (await session.execute(max_take_stmt)).scalar_one_or_none()
-            take_number = (max_take or 0) + 1
+            async with cls._take_lock:
+                # Determine next sequential take number
+                max_take_stmt = select(func.max(Recording.take_number)).where(
+                    Recording.segment_id == segment_id
+                )
+                max_take = (await session.execute(max_take_stmt)).scalar_one_or_none()
+                take_number = (max_take or 0) + 1
 
-            # Deactivate any existing active takes for this segment
-            await session.execute(
-                update(Recording)
-                .where(Recording.segment_id == segment_id)
-                .values(is_active=False)
-            )
+                # Deactivate any existing active takes for this segment
+                await session.execute(
+                    update(Recording)
+                    .where(Recording.segment_id == segment_id)
+                    .values(is_active=False)
+                )
 
-            new_recording = Recording(
-                id=rec_id,
-                segment_id=segment_id,
-                audio_file_path=settings.to_relative_path(target_file),
-                duration_ms=duration_ms,
-                take_number=take_number,
-                is_active=True,
-            )
-            session.add(new_recording)
-            await session.commit()
-            await session.refresh(new_recording)
+                new_recording = Recording(
+                    id=rec_id,
+                    segment_id=segment_id,
+                    audio_file_path=settings.to_relative_path(target_file),
+                    duration_ms=duration_ms,
+                    take_number=take_number,
+                    is_active=True,
+                )
+                session.add(new_recording)
+                await session.commit()
+                await session.refresh(new_recording)
 
             return RecordingRead.model_validate(new_recording)
 
@@ -316,10 +320,27 @@ class RecordingService:
         segment = await session.get(Segment, segment_id)
         project_id = segment.project_id if segment else None
 
-        # Delete database record
+        # 1. Resolve and validate safe file path
+        file_path = settings.resolve_media_path(audio_file_rel)
+        if project_id:
+            cls._validate_safe_path(file_path, project_id)
+
+        # 2. Unlink physical file first before committing DB changes.
+        # If file deletion fails (e.g. PermissionError / OSError), raise HTTP 500 before committing.
+        if file_path.is_file():
+            try:
+                file_path.unlink()
+            except OSError as exc:
+                await session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to delete recording audio file from disk: {exc}",
+                ) from exc
+
+        # 3. Delete database record
         await session.delete(recording)
 
-        # If deleted take was active, promote the most recent remaining take
+        # 4. If deleted take was active, promote the most recent remaining take
         if was_active:
             fallback_stmt = (
                 select(Recording)
@@ -332,16 +353,6 @@ class RecordingService:
                 fallback_take.is_active = True
 
         await session.commit()
-
-        # Unlink physical file safely
-        file_path = settings.resolve_media_path(audio_file_rel)
-        if file_path.is_file():
-            if project_id:
-                try:
-                    cls._validate_safe_path(file_path, project_id)
-                except HTTPException:
-                    return
-            file_path.unlink(missing_ok=True)
 
     @classmethod
     async def delete_recordings_for_segment(
@@ -358,9 +369,6 @@ class RecordingService:
             file_path = settings.resolve_media_path(rec.audio_file_path)
             if file_path.is_file():
                 if project_id:
-                    try:
-                        cls._validate_safe_path(file_path, project_id)
-                    except HTTPException:
-                        continue
+                    cls._validate_safe_path(file_path, project_id)
                 file_path.unlink(missing_ok=True)
             await session.delete(rec)

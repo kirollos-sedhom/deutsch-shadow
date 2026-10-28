@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import httpx
+from httpx import ASGITransport
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -515,6 +517,182 @@ class TestRecordingsAPI(unittest.TestCase):
 
         # Segment 1's recording file is preserved
         self.assertTrue(rec1_file.is_file())
+
+    def test_split_segment_with_recordings_rejected(self):
+        """Splitting a segment that has existing recordings is rejected with HTTP 400 to prevent data loss or audio mismatch."""
+        with open(self.sample_webm, "rb") as f:
+            upload_resp = self.client.post(
+                "/api/segments/seg-rec-1/recordings",
+                files={"file": ("take1.webm", f, "audio/webm")},
+            )
+        self.assertEqual(upload_resp.status_code, 201)
+        rec_id = upload_resp.json()["id"]
+
+        # Attempt to split seg-rec-1 (original duration: 0 to 3000ms) at 1500ms
+        split_resp = self.client.post(
+            "/api/segments/seg-rec-1/split",
+            json={
+                "split_time_ms": 1500,
+                "first_text": "Guten",
+                "second_text": "Morgen",
+            },
+        )
+        self.assertEqual(split_resp.status_code, 400)
+        self.assertIn("Cannot split segment #1: it has 1 existing vocal recording(s)", split_resp.json()["detail"])
+
+        # Verify segment was NOT modified
+        async def verify_unmodified():
+            async with self.TestSessionLocal() as session:
+                seg = await session.get(Segment, "seg-rec-1")
+                self.assertIsNotNone(seg)
+                self.assertEqual(seg.start_time_ms, 0)
+                self.assertEqual(seg.end_time_ms, 4000)
+                self.assertEqual(seg.text, "Erster Test-Clip.")
+
+                rec = await session.get(Recording, rec_id)
+                self.assertIsNotNone(rec)
+
+        asyncio.run(verify_unmodified())
+
+    def test_split_segment_after_recordings_deleted_succeeds(self):
+        """After explicitly deleting all recordings, splitting the segment succeeds normally."""
+        with open(self.sample_webm, "rb") as f:
+            upload_resp = self.client.post(
+                "/api/segments/seg-rec-1/recordings",
+                files={"file": ("take1.webm", f, "audio/webm")},
+            )
+        rec_id = upload_resp.json()["id"]
+
+        # Delete recording
+        del_resp = self.client.delete(f"/api/recordings/{rec_id}")
+        self.assertEqual(del_resp.status_code, 204)
+
+        # Now split segment
+        split_resp = self.client.post(
+            "/api/segments/seg-rec-1/split",
+            json={
+                "split_time_ms": 1500,
+                "first_text": "Guten",
+                "second_text": "Morgen",
+            },
+        )
+        self.assertEqual(split_resp.status_code, 200)
+        split_data = split_resp.json()
+        self.assertEqual(split_data["first_segment"]["end_time_ms"], 1500)
+        self.assertEqual(split_data["second_segment"]["start_time_ms"], 1500)
+
+    def test_failed_file_deletion_preserves_database_row_and_returns_error(self):
+        """When physical file deletion fails due to an OS-level error, the endpoint returns HTTP 500 and the DB row remains intact."""
+        with open(self.sample_webm, "rb") as f:
+            upload_resp = self.client.post(
+                "/api/segments/seg-rec-1/recordings",
+                files={"file": ("take1.webm", f, "audio/webm")},
+            )
+        self.assertEqual(upload_resp.status_code, 201)
+        rec_id = upload_resp.json()["id"]
+
+        with patch("pathlib.Path.unlink", side_effect=OSError("Access denied / file locked")):
+            del_resp = self.client.delete(f"/api/recordings/{rec_id}")
+            self.assertEqual(del_resp.status_code, 500)
+            self.assertIn("Failed to delete recording audio file", del_resp.json()["detail"])
+
+        # Verify DB row is still present
+        async def verify_row():
+            async with self.TestSessionLocal() as session:
+                rec = await session.get(Recording, rec_id)
+                self.assertIsNotNone(rec)
+
+        asyncio.run(verify_row())
+
+    def test_concurrent_uploads_serialize_takes_and_single_active(self):
+        """Concurrent uploads to the same segment assign sequential take numbers without collision and leave exactly 1 active take."""
+        async def run_concurrent():
+            async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                with open(self.sample_webm, "rb") as f:
+                    content = f.read()
+
+                async def upload_one(idx: int):
+                    files = {"file": (f"take_c{idx}.webm", content, "audio/webm")}
+                    return await ac.post("/api/segments/seg-rec-1/recordings", files=files)
+
+                responses = await asyncio.gather(*(upload_one(i) for i in range(4)))
+                for r in responses:
+                    self.assertEqual(r.status_code, 201)
+
+            async with self.TestSessionLocal() as session:
+                stmt = (
+                    select(Recording)
+                    .where(Recording.segment_id == "seg-rec-1")
+                    .order_by(Recording.take_number.asc())
+                )
+                recs = (await session.execute(stmt)).scalars().all()
+                self.assertEqual(len(recs), 4)
+                take_numbers = [r.take_number for r in recs]
+                self.assertEqual(take_numbers, [1, 2, 3, 4])
+                active_takes = [r for r in recs if r.is_active]
+                self.assertEqual(len(active_takes), 1)
+                self.assertEqual(active_takes[0].take_number, 4)
+
+        asyncio.run(run_concurrent())
+
+    def test_project_deletion_preserves_other_projects_recordings(self):
+        """Deleting one project cascade-removes its own recordings but preserves recordings of other projects."""
+        async def setup_proj2():
+            async with self.TestSessionLocal() as session:
+                p2 = Project(
+                    id="proj-rec-survivor",
+                    title="Survivor Project",
+                    original_filename="survivor.mp3",
+                    media_type="audio",
+                    duration_seconds=5.0,
+                    status="ready",
+                )
+                s2 = Segment(
+                    id="seg-rec-survivor",
+                    project_id="proj-rec-survivor",
+                    sequence_index=1,
+                    start_time_ms=0,
+                    end_time_ms=5000,
+                    text="Überlebender Text",
+                    raw_transcript="Überlebender Text",
+                )
+                session.add_all([p2, s2])
+                await session.commit()
+
+        asyncio.run(setup_proj2())
+
+        with open(self.sample_webm, "rb") as f:
+            rec1 = self.client.post(
+                "/api/segments/seg-rec-1/recordings",
+                files={"file": ("take1.webm", f, "audio/webm")},
+            ).json()
+
+        with open(self.sample_webm, "rb") as f:
+            rec2 = self.client.post(
+                "/api/segments/seg-rec-survivor/recordings",
+                files={"file": ("take_survivor.webm", f, "audio/webm")},
+            ).json()
+
+        file1 = settings.get_project_dir("proj-rec-test") / "recordings" / f"{rec1['id']}.webm"
+        file2 = settings.get_project_dir("proj-rec-survivor") / "recordings" / f"{rec2['id']}.webm"
+        self.assertTrue(file1.is_file())
+        self.assertTrue(file2.is_file())
+
+        del_res = self.client.delete("/api/projects/proj-rec-test")
+        self.assertEqual(del_res.status_code, 204)
+
+        # File 1 was removed with its project directory
+        self.assertFalse(file1.exists())
+        # File 2 remains intact in survivor project directory
+        self.assertTrue(file2.is_file())
+
+        # Database record for survivor is still present
+        async def verify_survivor():
+            async with self.TestSessionLocal() as session:
+                rec_surv = await session.get(Recording, rec2["id"])
+                self.assertIsNotNone(rec_surv)
+
+        asyncio.run(verify_survivor())
 
 
 if __name__ == "__main__":
