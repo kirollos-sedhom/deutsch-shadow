@@ -62,6 +62,16 @@ export interface SegmentRead {
   updated_at: string;
 }
 
+export interface RecordingRead {
+  id: string;
+  segment_id: string;
+  take_number: number;
+  duration_ms: number;
+  is_active: boolean;
+  created_at: string;
+  audio_url: string;
+}
+
 export interface SystemCapabilities {
   cpu_physical_cores: number;
   cpu_logical_cores: number;
@@ -188,4 +198,63 @@ export async function updateSegment(
     body: JSON.stringify(payload),
   });
   return handleResponse<SegmentRead>(res);
+}
+
+export function getRecordingAudioUrl(recordingId: string): string {
+  return `${BASE_URL}/recordings/${encodeURIComponent(recordingId)}/audio`;
+}
+
+export async function getRecordings(segmentId: string): Promise<RecordingRead[]> {
+  const res = await fetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}/recordings`);
+  return handleResponse<RecordingRead[]>(res);
+}
+
+export function getAudioExtensionFromMime(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes('webm')) return 'webm';
+  if (normalized.includes('wav')) return 'wav';
+  if (normalized.includes('ogg')) return 'ogg';
+  if (normalized.includes('mp4') || normalized.includes('m4a') || normalized.includes('aac')) return 'm4a';
+  return 'webm';
+}
+
+export async function uploadRecording(
+  segmentId: string,
+  audioBlob: Blob,
+  durationMs?: number,
+  signal?: AbortSignal
+): Promise<RecordingRead> {
+  const formData = new FormData();
+  const ext = getAudioExtensionFromMime(audioBlob.type);
+  const filename = `take_${Date.now()}.${ext}`;
+  const file =
+    typeof File !== 'undefined' && !(audioBlob instanceof File)
+      ? new File([audioBlob], filename, { type: audioBlob.type })
+      : audioBlob;
+
+  formData.append('file', file, filename);
+  if (durationMs !== undefined && durationMs > 0) {
+    formData.append('duration_ms', Math.round(durationMs).toString());
+  }
+
+  const res = await fetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}/recordings`, {
+    method: 'POST',
+    body: formData,
+    signal,
+  });
+  return handleResponse<RecordingRead>(res);
+}
+
+export async function setActiveTake(recordingId: string): Promise<RecordingRead> {
+  const res = await fetch(`${BASE_URL}/recordings/${encodeURIComponent(recordingId)}/active`, {
+    method: 'PATCH',
+  });
+  return handleResponse<RecordingRead>(res);
+}
+
+export async function deleteRecording(recordingId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/recordings/${encodeURIComponent(recordingId)}`, {
+    method: 'DELETE',
+  });
+  await handleResponse<void>(res);
 }
