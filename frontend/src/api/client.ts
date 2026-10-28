@@ -214,7 +214,7 @@ export function getAudioExtensionFromMime(mimeType: string): string {
   if (normalized.includes('webm')) return 'webm';
   if (normalized.includes('wav')) return 'wav';
   if (normalized.includes('ogg')) return 'ogg';
-  if (normalized.includes('mp4') || normalized.includes('m4a') || normalized.includes('aac')) return 'm4a';
+  if (normalized.includes('mp4') || normalized.includes('m4a')) return 'm4a';
   return 'webm';
 }
 

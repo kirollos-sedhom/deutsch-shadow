@@ -41,11 +41,11 @@ export const CANDIDATE_MIME_TYPES = [
   'audio/ogg;codecs=opus',
   'audio/ogg',
   'audio/mp4',
-  'audio/aac',
 ];
 
 /**
  * Probe supported recording MIME types across browsers (WebM for Chrome/Firefox, MP4 for Safari/iOS).
+ * Excludes raw ADTS audio/aac because it is not containerized and is rejected by the backend.
  */
 export function getPreferredMimeType(): string {
   if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined') {
@@ -122,6 +122,8 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const activeMimeRef = useRef<string>('');
+  const recordingResultRef = useRef<AudioRecordingResult | null>(null);
+  const isAbortedRef = useRef<boolean>(false);
 
   // High-resolution timing
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -148,17 +150,20 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
     accumulatedDurationRef.current = 0;
     setDurationMs(0);
     setRecordedBlob(null);
+    recordingResultRef.current = null;
     setRecordingResult(null);
     setError(null);
     setStatus('idle');
   }, [clearTimer]);
 
   const cancelRecording = useCallback(() => {
+    isAbortedRef.current = true;
     clearTimer();
     accumulatedDurationRef.current = 0;
     setDurationMs(0);
     chunksRef.current = [];
 
+    // Detach all listeners prior to calling stop to discard late events
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
       try {
         recorderRef.current.onstop = null;
@@ -175,11 +180,13 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
     streamRef.current = null;
 
     if (stopResolverRef.current) {
-      stopResolverRef.current(null);
+      const resolver = stopResolverRef.current;
       stopResolverRef.current = null;
+      resolver(null);
     }
 
     setRecordedBlob(null);
+    recordingResultRef.current = null;
     setRecordingResult(null);
     setError(null);
     setStatus('idle');
@@ -193,6 +200,7 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
 
     // Reset previous recording state and hardware
     cancelRecording();
+    isAbortedRef.current = false;
     setError(null);
 
     let stream: MediaStream;
@@ -224,51 +232,101 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       const recorder = new MediaRecorder(stream, options);
       recorderRef.current = recorder;
 
-      const chosenMime = recorder.mimeType || preferredMime || 'audio/webm';
+      // Prefer recorder.mimeType if set, otherwise preferredMime (or empty until chunk arrives)
+      const chosenMime = recorder.mimeType || preferredMime || '';
       activeMimeRef.current = chosenMime;
       setMimeType(chosenMime);
       chunksRef.current = [];
 
       recorder.ondataavailable = (event: BlobEvent) => {
+        // Discard data if recording was aborted or cancelled
+        if (isAbortedRef.current || recorderRef.current !== recorder) {
+          return;
+        }
+
         if (event.data && event.data.size > 0) {
+          // If recorder.mimeType was empty initially, derive active MIME from first chunk
+          if (!activeMimeRef.current && event.data.type) {
+            activeMimeRef.current = event.data.type;
+            setMimeType(event.data.type);
+          }
           chunksRef.current.push(event.data);
         }
       };
 
-      recorder.onerror = () => {
+      recorder.onerror = (event: Event) => {
+        isAbortedRef.current = true;
         clearTimer();
+
+        // 1. Detach onstop and ondataavailable immediately so subsequent stop/dataavailable
+        // events cannot publish a partial recording or overwrite the error state.
+        if (recorderRef.current) {
+          recorderRef.current.onstop = null;
+          recorderRef.current.ondataavailable = null;
+          recorderRef.current.onerror = null;
+        }
+        recorderRef.current = null;
+
+        // 2. Discard any collected partial chunks
+        chunksRef.current = [];
+
+        // 3. Stop all media hardware tracks
         stopMediaStream(streamRef.current);
         streamRef.current = null;
-        setError('MediaRecorder encountered an unexpected recording error.');
+
+        // 4. Extract meaningful error message if available on event.error
+        const eventError = (event as { error?: unknown })?.error;
+        const errorMsg = eventError
+          ? formatAudioRecorderError(eventError)
+          : 'MediaRecorder encountered an unexpected recording error.';
+
+        setError(errorMsg);
         setStatus('idle');
+
+        // 5. Settle pending stop promise with null exactly once
         if (stopResolverRef.current) {
-          stopResolverRef.current(null);
+          const resolver = stopResolverRef.current;
           stopResolverRef.current = null;
+          resolver(null);
         }
       };
 
       recorder.onstop = () => {
+        // Discard event if recording was aborted, errored, or cancelled
+        if (isAbortedRef.current || recorderRef.current !== recorder) {
+          return;
+        }
+
         clearTimer();
         stopMediaStream(streamRef.current);
         streamRef.current = null;
 
-        const finalBlob = new Blob(chunksRef.current, { type: activeMimeRef.current });
+        // Derive resolved MIME from activeMimeRef or first chunk
+        const resolvedMime =
+          activeMimeRef.current ||
+          (chunksRef.current.length > 0 && chunksRef.current[0].type ? chunksRef.current[0].type : '');
+
+        const finalBlob = resolvedMime
+          ? new Blob(chunksRef.current, { type: resolvedMime })
+          : new Blob(chunksRef.current);
         const finalDuration = Math.round(accumulatedDurationRef.current);
 
         const result: AudioRecordingResult = {
           blob: finalBlob,
           durationMs: finalDuration,
-          mimeType: activeMimeRef.current,
+          mimeType: resolvedMime,
         };
 
+        recordingResultRef.current = result;
         setRecordedBlob(finalBlob);
         setRecordingResult(result);
         setDurationMs(finalDuration);
         setStatus('stopped');
 
         if (stopResolverRef.current) {
-          stopResolverRef.current(result);
+          const resolver = stopResolverRef.current;
           stopResolverRef.current = null;
+          resolver(result);
         }
       };
 
@@ -287,6 +345,7 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
         setDurationMs(Math.round(elapsed));
       }, 50);
     } catch (err) {
+      isAbortedRef.current = true;
       stopMediaStream(stream);
       streamRef.current = null;
       recorderRef.current = null;
@@ -332,7 +391,7 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       !recorderRef.current ||
       (recorderRef.current.state !== 'recording' && recorderRef.current.state !== 'paused')
     ) {
-      return Promise.resolve(recordingResult);
+      return Promise.resolve(recordingResultRef.current);
     }
 
     if (recorderRef.current.state === 'recording') {
@@ -345,16 +404,34 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       try {
         recorderRef.current?.stop();
       } catch (err) {
+        isAbortedRef.current = true;
+        if (recorderRef.current) {
+          recorderRef.current.onstop = null;
+          recorderRef.current.ondataavailable = null;
+          recorderRef.current.onerror = null;
+        }
+        recorderRef.current = null;
+        chunksRef.current = [];
+        stopMediaStream(streamRef.current);
+        streamRef.current = null;
+
+        const resolver = stopResolverRef.current;
         stopResolverRef.current = null;
+
+        setStatus('idle');
         setError(formatAudioRecorderError(err));
-        resolve(null);
+
+        if (resolver) {
+          resolver(null);
+        }
       }
     });
-  }, [clearTimer, recordingResult]);
+  }, [clearTimer]);
 
   // Teardown hardware resources on unmount
   useEffect(() => {
     return () => {
+      isAbortedRef.current = true;
       clearTimer();
       if (recorderRef.current && recorderRef.current.state !== 'inactive') {
         try {
@@ -366,10 +443,15 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
           // Ignore errors during unmount stop
         }
       }
+      recorderRef.current = null;
       stopMediaStream(streamRef.current);
+      streamRef.current = null;
+      chunksRef.current = [];
+
       if (stopResolverRef.current) {
-        stopResolverRef.current(null);
+        const resolver = stopResolverRef.current;
         stopResolverRef.current = null;
+        resolver(null);
       }
     };
   }, [clearTimer]);

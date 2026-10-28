@@ -40,7 +40,6 @@ describe('Recording API Client', () => {
     it('maps mp4 and m4a variants to m4a', () => {
       expect(getAudioExtensionFromMime('audio/mp4')).toBe('m4a');
       expect(getAudioExtensionFromMime('audio/m4a')).toBe('m4a');
-      expect(getAudioExtensionFromMime('audio/aac')).toBe('m4a');
     });
 
     it('defaults to webm for unrecognized or empty mime types', () => {
