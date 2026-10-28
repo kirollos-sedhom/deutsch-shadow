@@ -1348,6 +1348,152 @@ a:hover {
   animation: spin 3s linear infinite;
 }
 
+/* ==========================================================================
+   Milestone 8 Phase 2: One-Click Comparison Player Controls & Banners
+   ========================================================================== */
+
+.player-comparison-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.player-comparison-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.player-comparison-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.player-comparison-btn:hover:not(:disabled) {
+  background-color: var(--bg-card-hover);
+  border-color: #a855f7;
+  color: #c084fc;
+}
+
+.player-comparison-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border-base);
+}
+
+.player-comparison-btn.active {
+  background-color: rgba(168, 85, 247, 0.18);
+  border-color: #a855f7;
+  color: #e9d5ff;
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.3);
+}
+
+.player-comparison-take-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.player-comparison-btn.active .player-comparison-take-badge {
+  background-color: rgba(168, 85, 247, 0.35);
+  color: #f3e8ff;
+}
+
+.player-comparison-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.player-comparison-hint.loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+/* Comparison Status Banner */
+.player-comparison-banner {
+  width: 100%;
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  animation: fadeIn 0.15s ease-out;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
+}
+
+.player-comparison-banner.original {
+  background-color: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  color: var(--primary);
+}
+
+.player-comparison-banner.gap {
+  background-color: rgba(24, 24, 27, 0.85);
+  border: 1px solid rgba(161, 161, 170, 0.3);
+  color: var(--text-muted);
+  min-height: 42px;
+}
+
+.player-comparison-banner.take {
+  background-color: rgba(6, 78, 59, 0.35);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #34d399;
+}
+
+.comparison-gap-dots {
+  letter-spacing: 4px;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-muted);
+  animation: pulse 1s infinite ease-in-out;
+}
+
+.player-comparison-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background-color: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+.player-comparison-error span {
+  flex: 1;
+}
+
 .player-controls-section {
   display: flex;
   align-items: center;
@@ -1508,6 +1654,14 @@ a:hover {
   .player-replay-btn {
     min-width: 62px;
     padding: 8px 10px;
+  }
+
+  .player-comparison-btn {
+    min-height: 42px;
+    padding: 8px 14px;
+    font-size: 13px;
+    width: 100%;
+    justify-content: center;
   }
 
   .player-shortcuts-footer {

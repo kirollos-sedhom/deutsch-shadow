@@ -1375,4 +1375,470 @@ describe('ShadowingPlayer Component', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('Milestone 8 Phase 2 — One-Click Comparison Player', () => {
+    const mockRecordingsList: client.RecordingRead[] = [
+      {
+        id: 'rec-1',
+        segment_id: 'seg-1',
+        take_number: 1,
+        duration_ms: 3200,
+        is_active: false,
+        created_at: '2026-10-28T10:05:00Z',
+        audio_url: '/api/recordings/rec-1/audio',
+      },
+      {
+        id: 'rec-2',
+        segment_id: 'seg-1',
+        take_number: 2,
+        duration_ms: 3300,
+        is_active: true,
+        created_at: '2026-10-28T10:10:00Z',
+        audio_url: '/api/recordings/rec-2/audio',
+      },
+    ];
+
+    it('disables Compare button and displays hint when no saved recordings exist', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue([]);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      const compareBtn = screen.getByTestId('compare-btn');
+      expect(compareBtn).toBeDisabled();
+      expect(screen.getByTestId('comparison-hint')).toHaveTextContent(
+        /record your voice below to enable comparison/i
+      );
+      expect(screen.queryByTestId('comparison-take-badge')).not.toBeInTheDocument();
+    });
+
+    it('enables Compare button, selects active take, and displays take badge', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      expect(screen.getByTestId('comparison-take-badge')).toHaveTextContent('Take 2');
+      expect(screen.queryByTestId('comparison-hint')).not.toBeInTheDocument();
+    });
+
+    it('falls back to highest take_number when no take has is_active flag', async () => {
+      const nonActiveRecordings: client.RecordingRead[] = [
+        {
+          id: 'rec-1',
+          segment_id: 'seg-1',
+          take_number: 1,
+          duration_ms: 3000,
+          is_active: false,
+          created_at: '2026-10-28T10:00:00Z',
+          audio_url: '/api/recordings/rec-1/audio',
+        },
+        {
+          id: 'rec-3',
+          segment_id: 'seg-1',
+          take_number: 3,
+          duration_ms: 3100,
+          is_active: false,
+          created_at: '2026-10-28T10:02:00Z',
+          audio_url: '/api/recordings/rec-3/audio',
+        },
+      ];
+      vi.mocked(client.getRecordings).mockResolvedValue(nonActiveRecordings);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      expect(screen.getByTestId('comparison-take-badge')).toHaveTextContent('Take 3');
+    });
+
+    it('executes full sequential comparison: original clip at selected speed -> 250ms gap -> recorded take at 1.0x -> idle', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Wait for recordings to resolve with real timers first
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const playSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      const pauseSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      const compareBtn = screen.getByTestId('compare-btn');
+
+      // Change speed to 1.25x to verify original clip respects speed
+      const speed125Btn = screen.getByRole('radio', { name: /1\.25 times playback speed/i });
+      fireEvent.click(speed125Btn);
+
+      const masterAudio = document.querySelector('audio:not([data-testid="comparison-audio"])') as HTMLAudioElement;
+      const compAudio = screen.getByTestId('comparison-audio') as HTMLAudioElement;
+
+      // Start comparison
+      fireEvent.click(compareBtn);
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Phase A: Original German playing
+      expect(masterAudio.currentTime).toBe(1.0); // start_time_ms = 1000
+      expect(masterAudio.playbackRate).toBe(1.25);
+      expect(playSpy).toHaveBeenCalled();
+      expect(screen.getByTestId('comparison-banner')).toHaveTextContent(/1\/2 Original German/i);
+      expect(screen.getByTestId('comparison-banner')).toHaveTextContent(/1\.25x speed/i);
+
+      pauseSpy.mockClear();
+      playSpy.mockClear();
+
+      // Boundary reached
+      masterAudio.currentTime = 4.5; // end_time_ms = 4500
+      fireEvent.timeUpdate(masterAudio);
+
+      // Phase A stopped, gap phase started
+      expect(pauseSpy).toHaveBeenCalled();
+      expect(screen.getByTestId('comparison-banner')).toHaveTextContent(/\.\.\./);
+
+      // Advance by 250ms gap
+      await vi.advanceTimersByTimeAsync(260);
+
+      // Phase B: Take audio playing at 1.0x
+      expect(compAudio.src).toContain('/api/recordings/rec-2/audio');
+      expect(compAudio.playbackRate).toBe(1.0);
+      expect(playSpy).toHaveBeenCalled();
+      expect(screen.getByTestId('comparison-banner')).toHaveTextContent(/2\/2 Your Voice/i);
+      expect(screen.getByTestId('comparison-banner')).toHaveTextContent(/Take 2 at 1\.0x/i);
+
+      // Take finishes playing
+      fireEvent.ended(compAudio);
+
+      // Returned to idle
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+      expect(screen.getByTestId('compare-btn')).toHaveTextContent(/Compare A\/B/i);
+
+      vi.useRealTimers();
+    });
+
+    it('suppresses loop countdown and does not repeat during comparison when loop mode is enabled', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      // Enable Loop mode
+      const loopBtn = screen.getByRole('button', { name: /enable auto-pause loop/i });
+      fireEvent.click(loopBtn);
+      expect(loopBtn).toHaveAttribute('aria-pressed', 'true');
+
+      // Start Comparison
+      const compareBtn = screen.getByTestId('compare-btn');
+      fireEvent.click(compareBtn);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const masterAudio = document.querySelector('audio:not([data-testid="comparison-audio"])') as HTMLAudioElement;
+      const compAudio = screen.getByTestId('comparison-audio') as HTMLAudioElement;
+
+      // Reach boundary for Phase A
+      masterAudio.currentTime = 4.5;
+      fireEvent.timeUpdate(masterAudio);
+
+      // Auto-Pause loop countdown card must NOT appear
+      expect(screen.queryByTestId('countdown-card')).not.toBeInTheDocument();
+      expect(screen.getByTestId('comparison-banner')).toHaveTextContent(/\.\.\./);
+
+      // Advance through gap to take
+      await vi.advanceTimersByTimeAsync(260);
+      expect(screen.getByTestId('comparison-banner')).toHaveTextContent(/2\/2 Your Voice/i);
+
+      // Take finishes
+      fireEvent.ended(compAudio);
+
+      // Return to idle without repeating
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('countdown-card')).not.toBeInTheDocument();
+
+      vi.useRealTimers();
+    });
+
+    it('cancels comparison when user presses Space during comparison', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      const pauseSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      fireEvent.click(screen.getByTestId('compare-btn'));
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(screen.getByTestId('comparison-banner')).toBeInTheDocument();
+
+      // Press Space to cancel
+      pauseSpy.mockClear();
+      fireEvent.keyDown(window, { code: 'Space', key: ' ' });
+
+      expect(pauseSpy).toHaveBeenCalled();
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+      expect(screen.getByTestId('compare-btn')).toHaveTextContent(/Compare A\/B/i);
+
+      vi.useRealTimers();
+    });
+
+    it('cancels comparison when user clicks Replay button', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      fireEvent.click(screen.getByTestId('compare-btn'));
+      await vi.advanceTimersByTimeAsync(10);
+      expect(screen.getByTestId('comparison-banner')).toBeInTheDocument();
+
+      // Click Replay
+      fireEvent.click(screen.getByRole('button', { name: /replay clip from start/i }));
+
+      // Comparison is cancelled
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+
+      vi.useRealTimers();
+    });
+
+    it('cancels comparison when user clicks Compare button again to toggle off', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      const compareBtn = screen.getByTestId('compare-btn');
+
+      // Turn on
+      fireEvent.click(compareBtn);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(screen.getByTestId('comparison-banner')).toBeInTheDocument();
+      expect(compareBtn).toHaveTextContent(/Stop Comparison/i);
+
+      // Turn off
+      fireEvent.click(compareBtn);
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+      expect(compareBtn).toHaveTextContent(/Compare A\/B/i);
+
+      vi.useRealTimers();
+    });
+
+    it('cancels comparison when user navigates clips or opens boundary editor', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      fireEvent.click(screen.getByTestId('compare-btn'));
+      await vi.advanceTimersByTimeAsync(10);
+      expect(screen.getByTestId('comparison-banner')).toBeInTheDocument();
+
+      // Open boundary editor
+      fireEvent.click(screen.getByRole('button', { name: /boundary adjustment/i }));
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+
+      vi.useRealTimers();
+    });
+
+    it('toggles comparison via C keyboard shortcut outside inputs, but ignores C inside inputs', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      // Press 'c' on window
+      fireEvent.keyDown(window, { key: 'c', code: 'KeyC' });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(screen.getByTestId('comparison-banner')).toBeInTheDocument();
+
+      // Press 'c' again to stop
+      fireEvent.keyDown(window, { key: 'c', code: 'KeyC' });
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+
+      // Now enter edit text mode
+      fireEvent.click(screen.getByRole('button', { name: /edit transcript text/i }));
+      const textarea = screen.getByRole('textbox');
+      expect(textarea).toBeInTheDocument();
+
+      // Press 'c' on textarea
+      fireEvent.keyDown(textarea, { key: 'c', code: 'KeyC' });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Should not start comparison
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+
+      vi.useRealTimers();
+    });
+
+    it('handles audio error during take playback gracefully with error message', async () => {
+      vi.mocked(client.getRecordings).mockResolvedValue(mockRecordingsList);
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('compare-btn')).not.toBeDisabled();
+      });
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      fireEvent.click(screen.getByTestId('compare-btn'));
+      await vi.advanceTimersByTimeAsync(10);
+
+      const masterAudio = document.querySelector('audio:not([data-testid="comparison-audio"])') as HTMLAudioElement;
+      const compAudio = screen.getByTestId('comparison-audio') as HTMLAudioElement;
+
+      // Trigger boundary and gap
+      masterAudio.currentTime = 4.5;
+      fireEvent.timeUpdate(masterAudio);
+      await vi.advanceTimersByTimeAsync(260);
+
+      // Take audio error occurs
+      fireEvent.error(compAudio);
+
+      // Error banner displays
+      expect(screen.getByTestId('comparison-error')).toBeInTheDocument();
+      expect(screen.getByText(/unable to play recorded take/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('comparison-banner')).not.toBeInTheDocument();
+
+      // Dismiss error
+      fireEvent.click(screen.getByRole('button', { name: /dismiss error/i }));
+      expect(screen.queryByTestId('comparison-error')).not.toBeInTheDocument();
+
+      vi.useRealTimers();
+    });
+  });
 });

@@ -16,8 +16,16 @@ import {
   AlertCircle,
   Loader2,
   Repeat,
+  GitCompare,
+  Volume2,
 } from 'lucide-react';
-import { SegmentRead, getMasterAudioUrl, updateSegment } from '../api/client';
+import {
+  SegmentRead,
+  RecordingRead,
+  getMasterAudioUrl,
+  getRecordingAudioUrl,
+  updateSegment,
+} from '../api/client';
 import { formatMs } from '../utils/formatters';
 import { RecordingStudio, RecordingStudioHandle } from './RecordingStudio';
 
@@ -45,6 +53,14 @@ export interface CountdownState {
   totalMs: number;
   remainingMs: number;
   isPaused: boolean;
+}
+
+export type ComparisonPhase = 'idle' | 'original' | 'gap' | 'take';
+
+export interface ComparisonState {
+  isActive: boolean;
+  phase: ComparisonPhase;
+  error: string | null;
 }
 
 export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
@@ -115,6 +131,15 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     isPaused: false,
   });
 
+  // Milestone 8 Phase 2: One-Click Comparison Player State & Refs
+  const [comparisonState, setComparisonState] = useState<ComparisonState>({
+    isActive: false,
+    phase: 'idle',
+    error: null,
+  });
+  const [activeTake, setActiveTake] = useState<RecordingRead | null>(null);
+  const [isTakesLoading, setIsTakesLoading] = useState(false);
+
   // Transcript Editing State
   const [isEditingText, setIsEditingText] = useState(false);
   const [draftText, setDraftText] = useState('');
@@ -152,6 +177,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const countdownTotalMsRef = useRef<number>(0);
   const countdownRemainingMsRef = useRef<number>(0);
 
+  // Comparison Player refs
+  const comparisonStateRef = useRef<ComparisonState>(comparisonState);
+  const activeTakeRef = useRef<RecordingRead | null>(null);
+  const isTakesLoadingRef = useRef(false);
+  const comparisonGapTimerRef = useRef<number | null>(null);
+  const comparisonRequestIdRef = useRef<number>(0);
+  const comparisonAudioRef = useRef<HTMLAudioElement | null>(null);
+
   // Sync refs
   useEffect(() => {
     playbackSpeedRef.current = playbackSpeed;
@@ -176,6 +209,18 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   useEffect(() => {
     countdownStateRef.current = countdownState;
   }, [countdownState]);
+
+  useEffect(() => {
+    comparisonStateRef.current = comparisonState;
+  }, [comparisonState]);
+
+  useEffect(() => {
+    activeTakeRef.current = activeTake;
+  }, [activeTake]);
+
+  useEffect(() => {
+    isTakesLoadingRef.current = isTakesLoading;
+  }, [isTakesLoading]);
 
   const currentSegment = segments[currentIndex] || null;
 
@@ -238,6 +283,87 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     countdownStateRef.current = nextState;
     setCountdownState(nextState);
   }, [clearCountdownTimer]);
+
+  // One-Click Comparison Player Helpers
+  const cancelComparison = useCallback((stopMasterAudio: boolean = false) => {
+    comparisonRequestIdRef.current++;
+    if (comparisonGapTimerRef.current !== null) {
+      window.clearTimeout(comparisonGapTimerRef.current);
+      comparisonGapTimerRef.current = null;
+    }
+    if (comparisonAudioRef.current) {
+      comparisonAudioRef.current.pause();
+    }
+    if (stopMasterAudio && audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+    }
+    const next: ComparisonState = {
+      isActive: false,
+      phase: 'idle',
+      error: null,
+    };
+    comparisonStateRef.current = next;
+    setComparisonState(next);
+  }, []);
+
+  const handleComparisonGapToPhaseB = useCallback(() => {
+    const currentRequestId = comparisonRequestIdRef.current;
+    const take = activeTakeRef.current;
+
+    if (!take) {
+      cancelComparison(false);
+      return;
+    }
+
+    const next: ComparisonState = {
+      isActive: true,
+      phase: 'take',
+      error: null,
+    };
+    comparisonStateRef.current = next;
+    setComparisonState(next);
+
+    if (!comparisonAudioRef.current) return;
+    const compAudio = comparisonAudioRef.current;
+    compAudio.src = getRecordingAudioUrl(take.id);
+    compAudio.playbackRate = 1.0;
+
+    compAudio
+      .play()
+      .then(() => {
+        if (comparisonRequestIdRef.current !== currentRequestId) {
+          compAudio.pause();
+        }
+      })
+      .catch((err) => {
+        if (comparisonRequestIdRef.current !== currentRequestId) return;
+        console.error('Comparison Phase B playback error:', err);
+        cancelComparison(false);
+        setComparisonState({
+          isActive: false,
+          phase: 'idle',
+          error: 'Unable to play recorded take. Audio file may be missing or unreadable.',
+        });
+      });
+  }, [cancelComparison]);
+
+  const handleComparisonPhaseAToGap = useCallback(() => {
+    const currentRequestId = comparisonRequestIdRef.current;
+    const next: ComparisonState = {
+      isActive: true,
+      phase: 'gap',
+      error: null,
+    };
+    comparisonStateRef.current = next;
+    setComparisonState(next);
+
+    comparisonGapTimerRef.current = window.setTimeout(() => {
+      if (comparisonRequestIdRef.current !== currentRequestId) return;
+      handleComparisonGapToPhaseB();
+    }, 250);
+  }, [handleComparisonGapToPhaseB]);
 
   // Execute replay when countdown completes
   const executeCountdownFinished = useCallback(() => {
@@ -371,6 +497,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   }, [clearCountdownTimer, executeCountdownFinished, tickCountdown]);
 
   const handleToggleLoop = useCallback(() => {
+    cancelComparison(true);
     setIsLoopMode((prev) => {
       const next = !prev;
       isLoopModeRef.current = next;
@@ -390,7 +517,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
 
       return next;
     });
-  }, [cancelCountdown]);
+  }, [cancelComparison, cancelCountdown]);
 
   const handleMultiplierChange = useCallback((newMultiplier: number) => {
     const oldMultiplier = pauseMultiplierRef.current || 1.2;
@@ -447,6 +574,12 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         }
       }
 
+      // If comparison is active and in Phase A, transition to 250ms gap
+      if (comparisonStateRef.current.isActive && comparisonStateRef.current.phase === 'original') {
+        handleComparisonPhaseAToGap();
+        return;
+      }
+
       // If Loop Mode is enabled and we reached the boundary end, transition to countdown
       if (isBoundaryEnd && isLoopModeRef.current) {
         // Prevent re-entrant countdown reset if already counting down
@@ -459,7 +592,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         startCountdown(totalPauseMs);
       }
     },
-    [clearStopTimer, activeStartMs, activeEndMs, startCountdown]
+    [clearStopTimer, activeStartMs, activeEndMs, startCountdown, handleComparisonPhaseAToGap]
   );
 
   // Stop timer scheduler accounting for playbackRate
@@ -478,8 +611,91 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     [clearStopTimer, stopPlaybackAtBoundary]
   );
 
+  // One-Click Comparison Player Toggle & Active Take Tracker
+  const handleToggleComparison = useCallback(() => {
+    // If currently comparing: cancel/stop comparison
+    if (comparisonStateRef.current.isActive) {
+      cancelComparison(true);
+      return;
+    }
+
+    const take = activeTakeRef.current;
+    if (!take || isTakesLoadingRef.current) return;
+    const studio = recordingStudioRef.current;
+    if (studio?.isBusy() || recordingBusyState.isBusy) return;
+
+    cancelCountdown();
+    clearStopTimer();
+    if (comparisonAudioRef.current) {
+      comparisonAudioRef.current.pause();
+    }
+
+    const currentRequestId = ++comparisonRequestIdRef.current;
+    const next: ComparisonState = {
+      isActive: true,
+      phase: 'original',
+      error: null,
+    };
+    comparisonStateRef.current = next;
+    setComparisonState(next);
+
+    if (!audioRef.current || !currentSegment) return;
+    const audio = audioRef.current;
+    const startTimeSec = activeStartMs / 1000;
+    const endTimeSec = activeEndMs / 1000;
+
+    audio.currentTime = startTimeSec;
+    audio.playbackRate = playbackSpeedRef.current || 1.0;
+
+    audio
+      .play()
+      .then(() => {
+        if (comparisonRequestIdRef.current !== currentRequestId) {
+          audio.pause();
+          return;
+        }
+        isPlayingRef.current = true;
+        setIsPlaying(true);
+        scheduleStopTimer(endTimeSec);
+      })
+      .catch((err) => {
+        if (comparisonRequestIdRef.current !== currentRequestId) return;
+        console.error('Comparison Phase A playback error:', err);
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+        cancelComparison(false);
+        setComparisonState({
+          isActive: false,
+          phase: 'idle',
+          error: 'Failed to play original audio clip.',
+        });
+      });
+  }, [
+    activeStartMs,
+    activeEndMs,
+    cancelComparison,
+    cancelCountdown,
+    clearStopTimer,
+    currentSegment,
+    recordingBusyState.isBusy,
+    scheduleStopTimer,
+  ]);
+
+  const handleActiveTakeChange = useCallback((take: RecordingRead | null, loading: boolean) => {
+    setActiveTake(take);
+    setIsTakesLoading(loading);
+    activeTakeRef.current = take;
+    isTakesLoadingRef.current = loading;
+  }, []);
+
   // Play / Pause / Resume
   const handlePlayPause = useCallback(() => {
+    // Case 0: If comparison is active, stop comparison immediately
+    if (comparisonStateRef.current.isActive) {
+      cancelComparison(true);
+      return;
+    }
+
     // Case 1: If countdown is active, toggle freeze / resume of countdown
     if (countdownStateRef.current.isActive) {
       if (countdownStateRef.current.isPaused) {
@@ -534,6 +750,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   }, [
     activeStartMs,
     activeEndMs,
+    cancelComparison,
     clearStopTimer,
     currentSegment,
     pauseCountdown,
@@ -543,6 +760,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
 
   // Replay from segment start
   const handleReplay = useCallback(() => {
+    cancelComparison(true);
     cancelCountdown();
     if (!audioRef.current || !currentSegment) return;
     const audio = audioRef.current;
@@ -568,10 +786,11 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         isPlayingRef.current = false;
         setIsPlaying(false);
       });
-  }, [activeStartMs, activeEndMs, cancelCountdown, clearStopTimer, currentSegment, scheduleStopTimer]);
+  }, [activeStartMs, activeEndMs, cancelComparison, cancelCountdown, clearStopTimer, currentSegment, scheduleStopTimer]);
 
   // Preview draft boundaries directly
   const handlePreviewDraft = useCallback(() => {
+    cancelComparison(true);
     cancelCountdown();
     if (!audioRef.current) return;
     const audio = audioRef.current;
@@ -597,21 +816,23 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         isPlayingRef.current = false;
         setIsPlaying(false);
       });
-  }, [cancelCountdown, clearStopTimer, draftStartMs, draftEndMs, scheduleStopTimer]);
+  }, [cancelComparison, cancelCountdown, clearStopTimer, draftStartMs, draftEndMs, scheduleStopTimer]);
 
   // Recording Studio Callbacks
   const handleBusyStateChange = useCallback(
     (isBusy: boolean, isUploading: boolean, isReviewPending: boolean) => {
       setRecordingBusyState({ isBusy, isUploading, isReviewPending });
       if (isBusy) {
+        cancelComparison(true);
         cancelCountdown();
         stopPlaybackAtBoundary();
       }
     },
-    [cancelCountdown, stopPlaybackAtBoundary]
+    [cancelComparison, cancelCountdown, stopPlaybackAtBoundary]
   );
 
   const handleStopMasterPlayback = useCallback(() => {
+    cancelComparison(true);
     cancelCountdown();
     clearStopTimer();
     if (audioRef.current && !audioRef.current.paused) {
@@ -619,7 +840,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     }
     isPlayingRef.current = false;
     setIsPlaying(false);
-  }, [cancelCountdown, clearStopTimer]);
+  }, [cancelComparison, cancelCountdown, clearStopTimer]);
 
   const handleRecordingCountChange = useCallback(
     (newCount: number) => {
@@ -636,6 +857,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Navigate to previous clip
   const executePreviousClip = useCallback(() => {
     if (currentIndex <= 0) return;
+    cancelComparison(true);
     cancelCountdown();
     clearStopTimer();
     const prevIndex = currentIndex - 1;
@@ -650,7 +872,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     setIsAdjustingBounds(false);
     setCurrentIndex(prevIndex);
     setIsMasked(defaultBlindMode);
-  }, [cancelCountdown, clearStopTimer, currentIndex, defaultBlindMode, segments]);
+  }, [cancelComparison, cancelCountdown, clearStopTimer, currentIndex, defaultBlindMode, segments]);
 
   const handlePreviousClip = useCallback(() => {
     if (currentIndex <= 0) return;
@@ -666,6 +888,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Navigate to next clip
   const executeNextClip = useCallback(() => {
     if (currentIndex >= segments.length - 1) return;
+    cancelComparison(true);
     cancelCountdown();
     clearStopTimer();
     const nextIndex = currentIndex + 1;
@@ -680,7 +903,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     setIsAdjustingBounds(false);
     setCurrentIndex(nextIndex);
     setIsMasked(defaultBlindMode);
-  }, [cancelCountdown, clearStopTimer, currentIndex, defaultBlindMode, segments]);
+  }, [cancelComparison, cancelCountdown, clearStopTimer, currentIndex, defaultBlindMode, segments]);
 
   const handleNextClip = useCallback(() => {
     if (currentIndex >= segments.length - 1) return;
@@ -701,13 +924,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       setPendingNavAction('exit');
       return;
     }
+    cancelComparison(true);
     cancelCountdown();
     clearStopTimer();
     if (audioRef.current) {
       audioRef.current.pause();
     }
     onExit(currentIndexRef.current);
-  }, [recordingBusyState, cancelCountdown, clearStopTimer, onExit]);
+  }, [recordingBusyState, cancelComparison, cancelCountdown, clearStopTimer, onExit]);
 
   const handleStay = useCallback(() => {
     setPendingNavAction(null);
@@ -806,6 +1030,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Transcript Editing Handlers
   const handleStartTextEdit = () => {
     if (!currentSegment) return;
+    cancelComparison(true);
     cancelCountdown();
     stopPlaybackAtBoundary();
     setDraftText(currentSegment.text);
@@ -885,6 +1110,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       return;
     }
 
+    cancelComparison(true);
     cancelCountdown();
     setIsSavingBounds(true);
     setBoundsError(null);
@@ -934,6 +1160,9 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       if (e.code === 'Space') {
         e.preventDefault();
         handlePlayPause();
+      } else if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        handleToggleComparison();
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
         handleReplay();
@@ -959,6 +1188,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     handlePlayPause,
+    handleToggleComparison,
     handleReplay,
     handleToggleLoop,
     handlePreviousClip,
@@ -969,13 +1199,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      cancelComparison(true);
       cancelCountdown();
       clearStopTimer();
       if (audioRef.current) {
         audioRef.current.pause();
       }
     };
-  }, [cancelCountdown, clearStopTimer]);
+  }, [cancelComparison, cancelCountdown, clearStopTimer]);
 
   if (!currentSegment || segments.length === 0) {
     return (
@@ -1011,6 +1242,28 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         onPlay={handleAudioPlay}
         onPause={handleAudioPause}
         onEnded={handleAudioEnded}
+      />
+
+      {/* Comparison Take Audio Element */}
+      <audio
+        ref={comparisonAudioRef}
+        preload="auto"
+        data-testid="comparison-audio"
+        onEnded={() => {
+          if (comparisonStateRef.current.isActive && comparisonStateRef.current.phase === 'take') {
+            cancelComparison(false);
+          }
+        }}
+        onError={() => {
+          if (comparisonStateRef.current.isActive) {
+            cancelComparison(false);
+            setComparisonState({
+              isActive: false,
+              phase: 'idle',
+              error: 'Unable to play recorded take. Audio file may be missing or unreadable.',
+            });
+          }
+        }}
       />
 
       {/* Top Navigation & Status Bar */}
@@ -1073,6 +1326,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
                   setIsAdjustingBounds((prev) => {
                     const next = !prev;
                     if (next) {
+                      cancelComparison(true);
                       cancelCountdown();
                       stopPlaybackAtBoundary();
                     }
@@ -1477,14 +1731,109 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
           </button>
         </section>
 
+        {/* Milestone 8 Phase 2: One-Click Comparison Player */}
+        <section className="player-comparison-section" aria-label="One-click comparison controls">
+          <div className="player-comparison-bar">
+            <button
+              className={`player-comparison-btn ${comparisonState.isActive ? 'active' : ''}`}
+              onClick={handleToggleComparison}
+              disabled={!activeTake || isTakesLoading || recordingBusyState.isBusy}
+              aria-label={
+                comparisonState.isActive
+                  ? 'Stop comparison playback'
+                  : !activeTake
+                  ? 'Comparison unavailable: No saved recording for this clip'
+                  : `Compare original audio with Take ${activeTake.take_number}`
+              }
+              title={
+                !activeTake
+                  ? 'No saved recording for this clip'
+                  : comparisonState.isActive
+                  ? 'Stop Comparison (C)'
+                  : 'Compare original and your recording (C)'
+              }
+              data-testid="compare-btn"
+            >
+              <GitCompare size={16} />
+              <span>{comparisonState.isActive ? 'Stop Comparison' : 'Compare A/B'}</span>
+              <kbd className="player-loop-kbd">C</kbd>
+              {activeTake && (
+                <span className="player-comparison-take-badge" data-testid="comparison-take-badge">
+                  Take {activeTake.take_number}
+                </span>
+              )}
+            </button>
+
+            {!activeTake && !isTakesLoading && (
+              <span className="player-comparison-hint" data-testid="comparison-hint">
+                Record your voice below to enable comparison
+              </span>
+            )}
+
+            {isTakesLoading && (
+              <span className="player-comparison-hint loading" data-testid="comparison-loading">
+                <Loader2 size={12} className="spin-slow" />
+                Loading recordings...
+              </span>
+            )}
+          </div>
+
+          {/* Active Comparison Phase Banner */}
+          {comparisonState.isActive && (
+            <div
+              className={`player-comparison-banner ${comparisonState.phase}`}
+              role="status"
+              aria-live="polite"
+              data-testid="comparison-banner"
+            >
+              {comparisonState.phase === 'original' && (
+                <>
+                  <Volume2 size={16} className="spin-slow" />
+                  <span>
+                    <strong>1/2 Original German</strong> ({playbackSpeed}x speed)...
+                  </span>
+                </>
+              )}
+              {comparisonState.phase === 'gap' && (
+                <span className="comparison-gap-dots">...</span>
+              )}
+              {comparisonState.phase === 'take' && (
+                <>
+                  <Volume2 size={16} />
+                  <span>
+                    <strong>2/2 Your Voice</strong> (Take {activeTake?.take_number} at 1.0x)...
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Dismissible Error Banner */}
+          {comparisonState.error && (
+            <div className="player-comparison-error" role="alert" data-testid="comparison-error">
+              <AlertCircle size={15} />
+              <span>{comparisonState.error}</span>
+              <button
+                type="button"
+                className="player-error-dismiss-btn"
+                onClick={() => setComparisonState((prev) => ({ ...prev, error: null }))}
+                aria-label="Dismiss error"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+        </section>
+
         {/* Vocal Recording Studio & Local Takes */}
         <RecordingStudio
           ref={recordingStudioRef}
           segment={currentSegment}
-          isMasterPlaying={isPlaying}
+          isMasterPlaying={isPlaying || comparisonState.isActive}
           onStopMasterPlayback={handleStopMasterPlayback}
           onRecordingCountChange={handleRecordingCountChange}
           onBusyStateChange={handleBusyStateChange}
+          onActiveTakeChange={handleActiveTakeChange}
         />
       </main>
 
@@ -1492,6 +1841,9 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       <footer className="player-shortcuts-footer" aria-label="Keyboard shortcuts legend">
         <span className="shortcut-item">
           <kbd>Space</kbd> Play/Pause
+        </span>
+        <span className="shortcut-item">
+          <kbd>C</kbd> Compare
         </span>
         <span className="shortcut-item">
           <kbd>L</kbd> Loop

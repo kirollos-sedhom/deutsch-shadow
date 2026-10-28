@@ -43,6 +43,7 @@ export interface RecordingStudioHandle {
   isBusy: () => boolean;
   isUploading: () => boolean;
   isReviewPending: () => boolean;
+  getActiveTake?: () => RecordingRead | null;
 }
 
 export interface RecordingStudioProps {
@@ -51,6 +52,20 @@ export interface RecordingStudioProps {
   onStopMasterPlayback: () => void;
   onRecordingCountChange: (newCount: number) => void;
   onBusyStateChange: (isBusy: boolean, isUploading: boolean, isReviewPending: boolean) => void;
+  onActiveTakeChange?: (take: RecordingRead | null, isLoading: boolean) => void;
+}
+
+/**
+ * Resolves the comparison target take:
+ * 1. An explicitly designated active take (is_active === true)
+ * 2. Fallback to latest take (highest take_number)
+ * 3. null if no takes exist
+ */
+export function resolveActiveTake(takes: RecordingRead[]): RecordingRead | null {
+  if (!takes || takes.length === 0) return null;
+  const active = takes.find((t) => t.is_active);
+  if (active) return active;
+  return [...takes].sort((a, b) => b.take_number - a.take_number)[0];
 }
 
 export const RecordingStudio = forwardRef<RecordingStudioHandle, RecordingStudioProps>(
@@ -61,6 +76,7 @@ export const RecordingStudio = forwardRef<RecordingStudioHandle, RecordingStudio
       onStopMasterPlayback,
       onRecordingCountChange,
       onBusyStateChange,
+      onActiveTakeChange,
     },
     ref
   ) => {
@@ -120,6 +136,12 @@ export const RecordingStudio = forwardRef<RecordingStudioHandle, RecordingStudio
       onBusyStateChange(isBusy, isUploading, isReviewPending);
     }, [isBusy, isUploading, isReviewPending, onBusyStateChange]);
 
+    // Report active take and loading status up to ShadowingPlayer for comparison player
+    useEffect(() => {
+      const active = resolveActiveTake(savedTakes);
+      onActiveTakeChange?.(active, takesLoading);
+    }, [savedTakes, takesLoading, onActiveTakeChange]);
+
     // Handle master audio mutual exclusion
     useEffect(() => {
       if (isMasterPlaying) {
@@ -166,8 +188,11 @@ export const RecordingStudio = forwardRef<RecordingStudioHandle, RecordingStudio
         return;
       }
 
+      setSavedTakes([]);
       if (segment.recordings_count > 0) {
         setTakesLoading(true);
+      } else {
+        setTakesLoading(false);
       }
       setTakesError(null);
 
@@ -175,9 +200,7 @@ export const RecordingStudio = forwardRef<RecordingStudioHandle, RecordingStudio
         .then((takes) => {
           if (isMounted) {
             recordingsCache.current[segmentId] = takes;
-            if (takes.length > 0) {
-              setSavedTakes(takes);
-            }
+            setSavedTakes(takes);
             if (takes.length !== segment.recordings_count) {
               onRecordingCountChange(takes.length);
             }
@@ -224,8 +247,9 @@ export const RecordingStudio = forwardRef<RecordingStudioHandle, RecordingStudio
         isBusy: () => isBusyRef.current,
         isUploading: () => isUploadingRef.current,
         isReviewPending: () => isReviewPendingRef.current,
+        getActiveTake: () => resolveActiveTake(savedTakes),
       }),
-      [cancelRecording, resetRecording]
+      [cancelRecording, resetRecording, savedTakes]
     );
 
     // Recording Controls Handlers

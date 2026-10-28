@@ -207,16 +207,15 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
 - **Goal:** Implement hands-free practice workflows via the Auto-Pause Loop and instant A/B original-versus-user voice comparison.
 - **Prerequisites:** Milestone 7 complete.
 - **Tasks:**
-  - [ ] Implement **Auto-Pause Loop Engine**:
+  - [x] Implement **Auto-Pause Loop Engine**:
     - Play original native segment.
-    - Automatically pause for a duration calculated as $\text{segment duration} \times \text{multiplier}$ (configurable, e.g. 1.0x – 1.5x).
-    - Visual countdown / cadence progress bar during pause.
-    - Optional automatic microphone recording during the pause interval.
-    - Automatically loop or advance to next segment.
-  - [ ] Implement **One-Click Comparison Player**:
+    - Automatically pause for a duration calculated as $\text{segment duration} \times \text{multiplier}$ (configurable: 1.0x, 1.2x, 1.5x, 2.0x).
+    - Visual countdown / cadence progress bar during pause with monotonic deadline and pause/resume support.
+    - Automatically loop current segment indefinitely until user explicitly stops or navigates.
+  - [x] Implement **One-Click Comparison Player**:
     - Hotkey `C` and dedicated comparison button.
-    - Sequential A/B mode: Plays original native segment, inserts 250ms silence, then plays user's latest take.
-    - Instant toggle mode: Switch between native speaker and user voice on the fly.
+    - Sequential A/B mode: Plays original native segment at selected speed, inserts 250ms silence gap, then plays user's active take (or highest take_number fallback) at 1.0x.
+    - Mutual exclusion, robust cancellation across all navigation/editing/recording actions, and clean suppression of auto-pause countdowns during comparison.
 - **Testing Requirements:**
   - Test timing accuracy of the auto-pause loop across various segment lengths.
   - Verify seamless audio switching without audio glitches, pops, or browser audio context deadlock.
