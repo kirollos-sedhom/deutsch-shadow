@@ -1173,6 +1173,181 @@ a:hover {
   color: #090d16;
 }
 
+/* ==========================================================================
+   Milestone 8 Phase 1: Auto-Pause Loop Controls & Countdown
+   ========================================================================== */
+
+.player-loop-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.player-loop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-base);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.player-loop-btn:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.player-loop-btn.active {
+  background-color: rgba(56, 189, 248, 0.15);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+.player-loop-kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: 3px;
+  color: var(--text-muted);
+}
+
+.player-loop-btn.active .player-loop-kbd {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: var(--primary);
+}
+
+.player-multiplier-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background-color: var(--bg-card);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-base);
+}
+
+.player-multiplier-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  padding: 0 6px;
+  user-select: none;
+}
+
+.player-multiplier-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  min-height: 32px;
+  min-width: 40px;
+  transition: all 0.12s ease;
+}
+
+.player-multiplier-btn:hover {
+  color: var(--text-primary);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.player-multiplier-btn.active {
+  background-color: var(--primary);
+  color: #090d16;
+}
+
+/* Countdown Card */
+.player-countdown-card {
+  width: 100%;
+  background-color: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeIn 0.15s ease-out;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.player-countdown-card.paused {
+  border-color: rgba(245, 158, 11, 0.5);
+  background-color: rgba(30, 27, 20, 0.85);
+}
+
+.player-countdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.player-countdown-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.player-countdown-card.paused .player-countdown-label {
+  color: #fbbf24;
+}
+
+.player-countdown-multiplier-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background-color: rgba(255, 255, 255, 0.06);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+}
+
+.player-countdown-track {
+  width: 100%;
+  height: 6px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.player-countdown-fill {
+  height: 100%;
+  background-color: var(--primary);
+  border-radius: 999px;
+  transition: width 0.05s linear;
+}
+
+.player-countdown-card.paused .player-countdown-fill {
+  background-color: #fbbf24;
+}
+
+.spin-slow {
+  animation: spin 3s linear infinite;
+}
+
 .player-controls-section {
   display: flex;
   align-items: center;
@@ -1307,6 +1482,22 @@ a:hover {
 
   .player-controls-section {
     gap: 8px;
+  }
+
+  .player-loop-section {
+    gap: 8px;
+  }
+
+  .player-loop-btn {
+    min-height: 42px;
+    padding: 8px 14px;
+    font-size: 14px;
+  }
+
+  .player-multiplier-btn {
+    min-height: 38px;
+    padding: 6px 10px;
+    font-size: 13px;
   }
 
   .player-nav-btn {

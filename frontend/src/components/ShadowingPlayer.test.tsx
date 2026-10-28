@@ -128,6 +128,7 @@ const mockSegments: SegmentRead[] = [
 describe('ShadowingPlayer Component', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
 
     Object.defineProperty(navigator, 'mediaDevices', {
       value: {
@@ -919,6 +920,344 @@ describe('ShadowingPlayer Component', () => {
       expect(pauseSpy).toHaveBeenCalled();
       // Master play button returns to "play clip"
       expect(screen.getByRole('button', { name: /^play clip$/i })).toBeInTheDocument();
+    });
+  });
+
+  describe('Milestone 8 Phase 1: Auto-Pause Loop Engine', () => {
+    it('toggles Auto-Pause Loop mode via loop button and keyboard shortcut L', () => {
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      const loopBtn = screen.getByRole('button', { name: /enable auto-pause loop/i });
+      expect(loopBtn).toBeInTheDocument();
+      expect(loopBtn).not.toHaveClass('active');
+      expect(screen.queryByRole('radiogroup', { name: /pause duration multiplier/i })).not.toBeInTheDocument();
+
+      // Click to enable
+      fireEvent.click(loopBtn);
+      expect(screen.getByRole('button', { name: /disable auto-pause loop/i })).toHaveClass('active');
+      expect(screen.getByRole('radiogroup', { name: /pause duration multiplier/i })).toBeInTheDocument();
+
+      // Press 'L' to toggle off
+      fireEvent.keyDown(window, { key: 'l' });
+      expect(screen.getByRole('button', { name: /enable auto-pause loop/i })).not.toHaveClass('active');
+      expect(screen.queryByRole('radiogroup', { name: /pause duration multiplier/i })).not.toBeInTheDocument();
+
+      // Press 'L' to toggle back on
+      fireEvent.keyDown(window, { key: 'L' });
+      expect(screen.getByRole('button', { name: /disable auto-pause loop/i })).toHaveClass('active');
+    });
+
+    it('allows selecting multiplier presets and stores preference', () => {
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+
+      // Default multiplier is 1.2x
+      const mult12Btn = screen.getByRole('radio', { name: /1.2 times segment duration pause/i });
+      expect(mult12Btn).toHaveClass('active');
+
+      // Select 1.5x
+      const mult15Btn = screen.getByRole('radio', { name: /1.5 times segment duration pause/i });
+      fireEvent.click(mult15Btn);
+      expect(mult15Btn).toHaveClass('active');
+      expect(mult12Btn).not.toHaveClass('active');
+      expect(localStorage.getItem('deutsch_shadow_pause_multiplier')).toBe('1.5');
+    });
+
+    it('initiates countdown when playback reaches boundary with Loop enabled (Option B)', async () => {
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop mode
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+
+      // Seg 1 is 1000ms -> 4500ms (duration 3500ms). At 1.0x speed and 1.2x multiplier, pause is 4200ms (4.2s)
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      const playBtn = screen.getByRole('button', { name: /^play clip$/i });
+      fireEvent.click(playBtn);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+      });
+
+      // Simulate reaching end boundary (4.5s)
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+        expect(screen.getByText(/repeat aloud:/i)).toBeInTheDocument();
+        expect(screen.getByText('1.2x pause')).toBeInTheDocument();
+      });
+    });
+
+    it('pauses and resumes countdown when Space is pressed during the pause phase', async () => {
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+
+      // Play and advance to boundary
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      fireEvent.click(screen.getByRole('button', { name: /^play clip$/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+      });
+
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+      });
+
+      // While countdown is active, button shows "Pause clip"
+      const pauseBtn = screen.getByRole('button', { name: /^pause clip$/i });
+      fireEvent.click(pauseBtn);
+
+      // Countdown should now be paused
+      await waitFor(() => {
+        expect(screen.getByText(/paused:/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^play clip$/i })).toBeInTheDocument();
+      });
+
+      // Press Space to resume countdown
+      fireEvent.keyDown(window, { code: 'Space' });
+
+      await waitFor(() => {
+        expect(screen.getByText(/repeat aloud:/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+      });
+    });
+
+    it('disabling loop during countdown cancels countdown immediately and stops at current clip without seeking back', async () => {
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop and enter countdown
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      fireEvent.click(screen.getByRole('button', { name: /^play clip$/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+      });
+
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+      });
+
+      // Disable loop
+      fireEvent.click(screen.getByRole('button', { name: /disable auto-pause loop/i }));
+
+      // Countdown should disappear immediately and audio position must remain at 4.5s (not reset to 1.0s)
+      await waitFor(() => {
+        expect(screen.queryByTestId('countdown-card')).not.toBeInTheDocument();
+      });
+      expect(audioEl.currentTime).toBe(4.5);
+      expect(screen.getByRole('button', { name: /^play clip$/i })).toBeInTheDocument();
+    });
+
+    it('disabling loop during audio playback allows current clip to finish without starting countdown', async () => {
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop, start playback
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      fireEvent.click(screen.getByRole('button', { name: /^play clip$/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+      });
+
+      // Disable loop mid-playback
+      fireEvent.click(screen.getByRole('button', { name: /disable auto-pause loop/i }));
+
+      // When audio reaches end boundary, countdown should NOT start
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+
+      expect(screen.queryByTestId('countdown-card')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^play clip$/i })).toBeInTheDocument();
+    });
+
+    it('rescales remaining pause duration proportionally when playback speed changes during countdown', async () => {
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop and enter countdown at speed 1.0x
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      fireEvent.click(screen.getByRole('button', { name: /^play clip$/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+      });
+
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+      });
+
+      // Pause the countdown to check deterministic rescaling
+      fireEvent.click(screen.getByRole('button', { name: /^pause clip$/i }));
+
+      // Switch speed to 0.75x
+      const speed075Btn = screen.getByRole('radio', { name: /0.75 times playback speed/i });
+      fireEvent.click(speed075Btn);
+
+      // Total pause scaled from 4.2s (at 1.0x) to 5.6s (4.2 / 0.75)
+      await waitFor(() => {
+        expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+      });
+    });
+
+    it('cancels countdown and halts audio when navigating clips or opening boundary drawer', async () => {
+      vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop and enter countdown
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      fireEvent.click(screen.getByRole('button', { name: /^play clip$/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+      });
+
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+      });
+
+      // Open boundary drawer
+      const adjustBtn = screen.getByRole('button', { name: /toggle boundary adjustment drawer/i });
+      fireEvent.click(adjustBtn);
+
+      // Countdown should be cancelled
+      expect(screen.queryByTestId('countdown-card')).not.toBeInTheDocument();
+      expect(screen.getByTestId('bounds-drawer')).toBeInTheDocument();
+    });
+
+    it('replays clip from start when countdown expires and continues loop', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const playSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+      vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+      render(
+        <ShadowingPlayer
+          projectId="proj-1"
+          projectTitle="Test Project"
+          segments={mockSegments}
+          initialSegmentIndex={0}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Enable loop
+      fireEvent.click(screen.getByRole('button', { name: /enable auto-pause loop/i }));
+      const audioEl = document.querySelector('audio') as HTMLAudioElement;
+      fireEvent.click(screen.getByRole('button', { name: /^play clip$/i }));
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Reach boundary to trigger countdown (pause = 3500ms * 1.2 = 4200ms)
+      audioEl.currentTime = 4.5;
+      fireEvent.timeUpdate(audioEl);
+      expect(screen.getByTestId('countdown-card')).toBeInTheDocument();
+
+      playSpy.mockClear();
+
+      // Advance timers by 4300ms so countdown expires
+      await vi.advanceTimersByTimeAsync(4300);
+
+      // Countdown should finish, audio should seek to start (1.0s), and play() should be called again
+      expect(audioEl.currentTime).toBe(1.0);
+      expect(playSpy).toHaveBeenCalled();
+      expect(screen.queryByTestId('countdown-card')).not.toBeInTheDocument();
+
+      vi.useRealTimers();
     });
   });
 });

@@ -327,6 +327,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         projectDurationSeconds={project.duration_seconds}
         initialSegmentIndex={practicingClipIndex}
         defaultBlindMode={isBlindMode}
+        initialAutoPauseMultiplier={project.settings?.auto_pause_multiplier ?? 1.2}
         onSegmentUpdate={(updated) => {
           setSegments((prev) =>
             prev.map((s) => (s.id === updated.id ? updated : s))

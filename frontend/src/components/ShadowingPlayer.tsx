@@ -15,6 +15,7 @@ import {
   X,
   AlertCircle,
   Loader2,
+  Repeat,
 } from 'lucide-react';
 import { SegmentRead, getMasterAudioUrl, updateSegment } from '../api/client';
 import { formatMs } from '../utils/formatters';
@@ -27,12 +28,24 @@ export interface ShadowingPlayerProps {
   projectDurationSeconds?: number;
   initialSegmentIndex?: number;
   defaultBlindMode?: boolean;
+  initialAutoPauseMultiplier?: number;
   onExit: (lastSegmentIndex: number) => void;
   onSegmentUpdate?: (updatedSegment: SegmentRead) => void;
 }
 
 const SPEED_PRESETS = [0.75, 0.85, 1.0, 1.15, 1.25];
+const MULTIPLIER_PRESETS = [1.0, 1.2, 1.5, 2.0];
 const MIN_CLIP_DURATION_MS = 100;
+
+export const PAUSE_MULTIPLIER_STORAGE_KEY = 'deutsch_shadow_pause_multiplier';
+export const LOOP_MODE_STORAGE_KEY = 'deutsch_shadow_loop_mode';
+
+export interface CountdownState {
+  isActive: boolean;
+  totalMs: number;
+  remainingMs: number;
+  isPaused: boolean;
+}
 
 export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   projectId,
@@ -41,6 +54,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   projectDurationSeconds,
   initialSegmentIndex = 0,
   defaultBlindMode = true,
+  initialAutoPauseMultiplier = 1.2,
   onExit,
   onSegmentUpdate,
 }) => {
@@ -71,6 +85,36 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isMasked, setIsMasked] = useState(defaultBlindMode);
 
+  // Auto-Pause Loop & Multiplier State
+  const [isLoopMode, setIsLoopMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(LOOP_MODE_STORAGE_KEY);
+      return saved !== null ? saved === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [pauseMultiplier, setPauseMultiplier] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(PAUSE_MULTIPLIER_STORAGE_KEY);
+      if (saved !== null) {
+        const parsed = parseFloat(saved);
+        if (MULTIPLIER_PRESETS.includes(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return initialAutoPauseMultiplier;
+  });
+
+  const [countdownState, setCountdownState] = useState<CountdownState>({
+    isActive: false,
+    totalMs: 0,
+    remainingMs: 0,
+    isPaused: false,
+  });
+
   // Transcript Editing State
   const [isEditingText, setIsEditingText] = useState(false);
   const [draftText, setDraftText] = useState('');
@@ -99,6 +143,15 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const isPlayingRef = useRef(isPlaying);
   const currentIndexRef = useRef(currentIndex);
 
+  // Countdown refs for monotonic clock & accuracy
+  const isLoopModeRef = useRef(isLoopMode);
+  const pauseMultiplierRef = useRef(pauseMultiplier);
+  const countdownStateRef = useRef(countdownState);
+  const countdownDeadlineRef = useRef<number | null>(null);
+  const countdownTimerRef = useRef<number | null>(null);
+  const countdownTotalMsRef = useRef<number>(0);
+  const countdownRemainingMsRef = useRef<number>(0);
+
   // Sync refs
   useEffect(() => {
     playbackSpeedRef.current = playbackSpeed;
@@ -111,6 +164,18 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
+
+  useEffect(() => {
+    isLoopModeRef.current = isLoopMode;
+  }, [isLoopMode]);
+
+  useEffect(() => {
+    pauseMultiplierRef.current = pauseMultiplier;
+  }, [pauseMultiplier]);
+
+  useEffect(() => {
+    countdownStateRef.current = countdownState;
+  }, [countdownState]);
 
   const currentSegment = segments[currentIndex] || null;
 
@@ -140,17 +205,235 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const activeStartMs = isAdjustingBounds ? draftStartMs : currentSegment?.start_time_ms || 0;
   const activeEndMs = isAdjustingBounds ? draftEndMs : currentSegment?.end_time_ms || 0;
 
+  const playRequestIdRef = useRef(0);
+
   // Helper to cancel any pending stop timer
   const clearStopTimer = useCallback(() => {
+    playRequestIdRef.current++;
     if (stopTimerRef.current !== null) {
       window.clearTimeout(stopTimerRef.current);
       stopTimerRef.current = null;
     }
   }, []);
 
+  // Countdown timer helpers
+  const clearCountdownTimer = useCallback(() => {
+    if (countdownTimerRef.current !== null) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }, []);
+
+  const cancelCountdown = useCallback(() => {
+    clearCountdownTimer();
+    countdownDeadlineRef.current = null;
+    countdownRemainingMsRef.current = 0;
+    countdownTotalMsRef.current = 0;
+    const nextState: CountdownState = {
+      isActive: false,
+      totalMs: 0,
+      remainingMs: 0,
+      isPaused: false,
+    };
+    countdownStateRef.current = nextState;
+    setCountdownState(nextState);
+  }, [clearCountdownTimer]);
+
+  // Execute replay when countdown completes
+  const executeCountdownFinished = useCallback(() => {
+    clearCountdownTimer();
+    countdownDeadlineRef.current = null;
+    countdownRemainingMsRef.current = 0;
+    countdownTotalMsRef.current = 0;
+    const nextState: CountdownState = {
+      isActive: false,
+      totalMs: 0,
+      remainingMs: 0,
+      isPaused: false,
+    };
+    countdownStateRef.current = nextState;
+    setCountdownState(nextState);
+
+    // If loop mode is still enabled, start next playback cycle from activeStartMs
+    if (isLoopModeRef.current) {
+      if (!audioRef.current) return;
+      const audio = audioRef.current;
+      const startTimeSec = activeStartMs / 1000;
+      const endTimeSec = activeEndMs / 1000;
+
+      clearStopTimer();
+      const currentRequestId = ++playRequestIdRef.current;
+      audio.currentTime = startTimeSec;
+      audio.playbackRate = playbackSpeedRef.current;
+
+      audio
+        .play()
+        .then(() => {
+          if (playRequestIdRef.current !== currentRequestId) return;
+          setIsPlaying(true);
+          scheduleStopTimer(endTimeSec);
+        })
+        .catch((err) => {
+          if (playRequestIdRef.current !== currentRequestId) return;
+          console.error('Auto-pause loop replay error:', err);
+          setIsPlaying(false);
+        });
+    }
+  }, [activeStartMs, activeEndMs, clearCountdownTimer, clearStopTimer]);
+
+  // Monotonic countdown tick
+  const tickCountdown = useCallback(() => {
+    if (countdownDeadlineRef.current === null) return;
+    const now = performance.now();
+    const remaining = Math.max(0, countdownDeadlineRef.current - now);
+
+    if (remaining <= 0) {
+      executeCountdownFinished();
+      return;
+    }
+
+    countdownRemainingMsRef.current = remaining;
+    setCountdownState((prev) => {
+      if (!prev.isActive || prev.isPaused) return prev;
+      return {
+        ...prev,
+        remainingMs: remaining,
+      };
+    });
+  }, [executeCountdownFinished]);
+
+  const startCountdown = useCallback(
+    (totalMs: number, initialRemainingMs?: number) => {
+      clearCountdownTimer();
+      const remaining = initialRemainingMs ?? totalMs;
+      const now = performance.now();
+      countdownDeadlineRef.current = now + remaining;
+      countdownTotalMsRef.current = totalMs;
+      countdownRemainingMsRef.current = remaining;
+
+      const nextState: CountdownState = {
+        isActive: true,
+        totalMs,
+        remainingMs: remaining,
+        isPaused: false,
+      };
+      countdownStateRef.current = nextState;
+      setCountdownState(nextState);
+
+      countdownTimerRef.current = window.setInterval(tickCountdown, 50);
+    },
+    [clearCountdownTimer, tickCountdown]
+  );
+
+  const pauseCountdown = useCallback(() => {
+    if (!countdownStateRef.current.isActive || countdownStateRef.current.isPaused) return;
+    clearCountdownTimer();
+
+    const now = performance.now();
+    const remaining =
+      countdownDeadlineRef.current !== null
+        ? Math.max(0, countdownDeadlineRef.current - now)
+        : countdownRemainingMsRef.current;
+
+    countdownDeadlineRef.current = null;
+    countdownRemainingMsRef.current = remaining;
+
+    const nextState: CountdownState = {
+      ...countdownStateRef.current,
+      remainingMs: remaining,
+      isPaused: true,
+    };
+    countdownStateRef.current = nextState;
+    setCountdownState(nextState);
+  }, [clearCountdownTimer]);
+
+  const resumeCountdown = useCallback(() => {
+    if (!countdownStateRef.current.isActive || !countdownStateRef.current.isPaused) return;
+    const remaining = countdownRemainingMsRef.current;
+    if (remaining <= 0) {
+      executeCountdownFinished();
+      return;
+    }
+
+    const now = performance.now();
+    countdownDeadlineRef.current = now + remaining;
+
+    const nextState: CountdownState = {
+      ...countdownStateRef.current,
+      isPaused: false,
+    };
+    countdownStateRef.current = nextState;
+    setCountdownState(nextState);
+
+    countdownTimerRef.current = window.setInterval(tickCountdown, 50);
+  }, [clearCountdownTimer, executeCountdownFinished, tickCountdown]);
+
+  const handleToggleLoop = useCallback(() => {
+    setIsLoopMode((prev) => {
+      const next = !prev;
+      isLoopModeRef.current = next;
+      try {
+        localStorage.setItem(LOOP_MODE_STORAGE_KEY, String(next));
+      } catch {
+        // ignore
+      }
+
+      // If loop is disabled during a countdown: cancel countdown, clear timers,
+      // and stop playback at current clip. Do NOT seek back to start.
+      if (!next && countdownStateRef.current.isActive) {
+        cancelCountdown();
+      }
+      // If loop is disabled during normal playback, allow current clip to finish
+      // and stop at its end boundary without replaying.
+
+      return next;
+    });
+  }, [cancelCountdown]);
+
+  const handleMultiplierChange = useCallback((newMultiplier: number) => {
+    const oldMultiplier = pauseMultiplierRef.current || 1.2;
+    setPauseMultiplier(newMultiplier);
+    pauseMultiplierRef.current = newMultiplier;
+
+    try {
+      localStorage.setItem(PAUSE_MULTIPLIER_STORAGE_KEY, String(newMultiplier));
+    } catch {
+      // ignore
+    }
+
+    // If countdown is active, preserve remaining-time proportion:
+    if (countdownStateRef.current.isActive && oldMultiplier > 0) {
+      const now = performance.now();
+      const currentRemaining =
+        countdownDeadlineRef.current !== null
+          ? Math.max(0, countdownDeadlineRef.current - now)
+          : countdownRemainingMsRef.current;
+
+      const multRatio = newMultiplier / oldMultiplier;
+      const rescaledRemaining = Math.max(20, Math.round(currentRemaining * multRatio));
+      const rescaledTotal = Math.max(
+        rescaledRemaining,
+        Math.round(countdownTotalMsRef.current * multRatio)
+      );
+
+      countdownTotalMsRef.current = rescaledTotal;
+      countdownRemainingMsRef.current = rescaledRemaining;
+
+      if (!countdownStateRef.current.isPaused) {
+        countdownDeadlineRef.current = now + rescaledRemaining;
+      }
+
+      setCountdownState((prev) => ({
+        ...prev,
+        totalMs: rescaledTotal,
+        remainingMs: rescaledRemaining,
+      }));
+    }
+  }, []);
+
   // Stop playback at boundary or manual halt
   const stopPlaybackAtBoundary = useCallback(
-    (endTimeSec?: number) => {
+    (endTimeSec?: number, isBoundaryEnd: boolean = false) => {
       clearStopTimer();
       if (audioRef.current) {
         audioRef.current.pause();
@@ -159,8 +442,17 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         }
       }
       setIsPlaying(false);
+
+      // If Loop Mode is enabled and we reached the boundary end, transition to countdown
+      if (isBoundaryEnd && isLoopModeRef.current) {
+        const clipDurationMs = Math.max(MIN_CLIP_DURATION_MS, activeEndMs - activeStartMs);
+        const speed = playbackSpeedRef.current || 1.0;
+        const multiplier = pauseMultiplierRef.current || 1.2;
+        const totalPauseMs = Math.max(100, Math.round((clipDurationMs / speed) * multiplier));
+        startCountdown(totalPauseMs);
+      }
     },
-    [clearStopTimer]
+    [clearStopTimer, activeStartMs, activeEndMs, startCountdown]
   );
 
   // Stop timer scheduler accounting for playbackRate
@@ -173,7 +465,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       const remainingWallMs = Math.max(20, (remainingSec * 1000) / speed);
 
       stopTimerRef.current = window.setTimeout(() => {
-        stopPlaybackAtBoundary(endTimeSec);
+        stopPlaybackAtBoundary(endTimeSec, true);
       }, remainingWallMs);
     },
     [clearStopTimer, stopPlaybackAtBoundary]
@@ -181,12 +473,22 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
 
   // Play / Pause / Resume
   const handlePlayPause = useCallback(() => {
+    // Case 1: If countdown is active, toggle freeze / resume of countdown
+    if (countdownStateRef.current.isActive) {
+      if (countdownStateRef.current.isPaused) {
+        resumeCountdown();
+      } else {
+        pauseCountdown();
+      }
+      return;
+    }
+
     if (!audioRef.current || !currentSegment) return;
     const audio = audioRef.current;
     const startTimeSec = activeStartMs / 1000;
     const endTimeSec = activeEndMs / 1000;
 
-    // Case 1: If currently playing -> PAUSE at current position
+    // Case 2: If currently playing audio -> PAUSE at current position
     if (isPlayingRef.current) {
       clearStopTimer();
       audio.pause();
@@ -194,8 +496,9 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       return;
     }
 
-    // Case 2: Resume or Start
+    // Case 3: Resume or Start audio
     clearStopTimer();
+    const currentRequestId = ++playRequestIdRef.current;
     let targetTime = startTimeSec;
 
     // If currentTime is already within the active segment boundaries, resume from position
@@ -209,73 +512,99 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     audio
       .play()
       .then(() => {
+        if (playRequestIdRef.current !== currentRequestId) return;
         setIsPlaying(true);
         scheduleStopTimer(endTimeSec);
       })
       .catch((err) => {
+        if (playRequestIdRef.current !== currentRequestId) return;
         console.error('Audio playback error:', err);
+        setIsPlaying(false);
       });
-  }, [activeStartMs, activeEndMs, clearStopTimer, currentSegment, scheduleStopTimer]);
+  }, [
+    activeStartMs,
+    activeEndMs,
+    clearStopTimer,
+    currentSegment,
+    pauseCountdown,
+    resumeCountdown,
+    scheduleStopTimer,
+  ]);
 
   // Replay from segment start
   const handleReplay = useCallback(() => {
+    cancelCountdown();
     if (!audioRef.current || !currentSegment) return;
     const audio = audioRef.current;
     const startTimeSec = activeStartMs / 1000;
     const endTimeSec = activeEndMs / 1000;
 
     clearStopTimer();
+    const currentRequestId = ++playRequestIdRef.current;
     audio.currentTime = startTimeSec;
     audio.playbackRate = playbackSpeedRef.current;
 
     audio
       .play()
       .then(() => {
+        if (playRequestIdRef.current !== currentRequestId) return;
         setIsPlaying(true);
         scheduleStopTimer(endTimeSec);
       })
       .catch((err) => {
+        if (playRequestIdRef.current !== currentRequestId) return;
         console.error('Audio replay error:', err);
+        setIsPlaying(false);
       });
-  }, [activeStartMs, activeEndMs, clearStopTimer, currentSegment, scheduleStopTimer]);
+  }, [activeStartMs, activeEndMs, cancelCountdown, clearStopTimer, currentSegment, scheduleStopTimer]);
 
   // Preview draft boundaries directly
   const handlePreviewDraft = useCallback(() => {
+    cancelCountdown();
     if (!audioRef.current) return;
     const audio = audioRef.current;
     const startTimeSec = draftStartMs / 1000;
     const endTimeSec = draftEndMs / 1000;
 
     clearStopTimer();
+    const currentRequestId = ++playRequestIdRef.current;
     audio.currentTime = startTimeSec;
     audio.playbackRate = playbackSpeedRef.current;
 
     audio
       .play()
       .then(() => {
+        if (playRequestIdRef.current !== currentRequestId) return;
         setIsPlaying(true);
         scheduleStopTimer(endTimeSec);
       })
       .catch((err) => {
+        if (playRequestIdRef.current !== currentRequestId) return;
         console.error('Preview playback error:', err);
+        setIsPlaying(false);
       });
-  }, [clearStopTimer, draftStartMs, draftEndMs, scheduleStopTimer]);
+  }, [cancelCountdown, clearStopTimer, draftStartMs, draftEndMs, scheduleStopTimer]);
 
   // Recording Studio Callbacks
   const handleBusyStateChange = useCallback(
     (isBusy: boolean, isUploading: boolean, isReviewPending: boolean) => {
       setRecordingBusyState({ isBusy, isUploading, isReviewPending });
+      if (isBusy) {
+        cancelCountdown();
+        stopPlaybackAtBoundary();
+      }
     },
-    []
+    [cancelCountdown, stopPlaybackAtBoundary]
   );
 
   const handleStopMasterPlayback = useCallback(() => {
+    cancelCountdown();
     clearStopTimer();
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
     }
     setIsPlaying(false);
-  }, [clearStopTimer]);
+  }, [cancelCountdown, clearStopTimer]);
 
   const handleRecordingCountChange = useCallback(
     (newCount: number) => {
@@ -292,6 +621,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Navigate to previous clip
   const executePreviousClip = useCallback(() => {
     if (currentIndex <= 0) return;
+    cancelCountdown();
     clearStopTimer();
     const prevIndex = currentIndex - 1;
     const prevSeg = segments[prevIndex];
@@ -305,7 +635,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     setIsAdjustingBounds(false);
     setCurrentIndex(prevIndex);
     setIsMasked(defaultBlindMode);
-  }, [clearStopTimer, currentIndex, defaultBlindMode, segments]);
+  }, [cancelCountdown, clearStopTimer, currentIndex, defaultBlindMode, segments]);
 
   const handlePreviousClip = useCallback(() => {
     if (currentIndex <= 0) return;
@@ -321,6 +651,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Navigate to next clip
   const executeNextClip = useCallback(() => {
     if (currentIndex >= segments.length - 1) return;
+    cancelCountdown();
     clearStopTimer();
     const nextIndex = currentIndex + 1;
     const nextSeg = segments[nextIndex];
@@ -334,7 +665,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     setIsAdjustingBounds(false);
     setCurrentIndex(nextIndex);
     setIsMasked(defaultBlindMode);
-  }, [clearStopTimer, currentIndex, defaultBlindMode, segments]);
+  }, [cancelCountdown, clearStopTimer, currentIndex, defaultBlindMode, segments]);
 
   const handleNextClip = useCallback(() => {
     if (currentIndex >= segments.length - 1) return;
@@ -355,8 +686,13 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       setPendingNavAction('exit');
       return;
     }
+    cancelCountdown();
+    clearStopTimer();
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
     onExit(currentIndexRef.current);
-  }, [recordingBusyState, onExit]);
+  }, [recordingBusyState, cancelCountdown, clearStopTimer, onExit]);
 
   const handleStay = useCallback(() => {
     setPendingNavAction(null);
@@ -378,6 +714,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Change playback speed
   const handleSpeedChange = useCallback(
     (speed: number) => {
+      const oldSpeed = playbackSpeedRef.current || 1.0;
       setPlaybackSpeed(speed);
       playbackSpeedRef.current = speed;
 
@@ -387,6 +724,36 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         if (isPlayingRef.current) {
           scheduleStopTimer(activeEndMs / 1000);
         }
+      }
+
+      // If countdown is active: preserve remaining-time proportion based on speed:
+      // pause_ms = (clip_duration / speed) * multiplier, so ratio is oldSpeed / newSpeed
+      if (countdownStateRef.current.isActive && speed > 0) {
+        const now = performance.now();
+        const currentRemaining =
+          countdownDeadlineRef.current !== null
+            ? Math.max(0, countdownDeadlineRef.current - now)
+            : countdownRemainingMsRef.current;
+
+        const speedRatio = oldSpeed / speed;
+        const rescaledRemaining = Math.max(20, Math.round(currentRemaining * speedRatio));
+        const rescaledTotal = Math.max(
+          rescaledRemaining,
+          Math.round(countdownTotalMsRef.current * speedRatio)
+        );
+
+        countdownTotalMsRef.current = rescaledTotal;
+        countdownRemainingMsRef.current = rescaledRemaining;
+
+        if (!countdownStateRef.current.isPaused) {
+          countdownDeadlineRef.current = now + rescaledRemaining;
+        }
+
+        setCountdownState((prev) => ({
+          ...prev,
+          totalMs: rescaledTotal,
+          remainingMs: rescaledRemaining,
+        }));
       }
     },
     [activeEndMs, scheduleStopTimer]
@@ -398,7 +765,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     const current = audioRef.current.currentTime;
     const endTimeSec = activeEndMs / 1000;
     if (current >= endTimeSec) {
-      stopPlaybackAtBoundary(endTimeSec);
+      stopPlaybackAtBoundary(endTimeSec, true);
     }
   };
 
@@ -412,12 +779,14 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   };
 
   const handleAudioEnded = () => {
-    stopPlaybackAtBoundary(activeEndMs / 1000);
+    stopPlaybackAtBoundary(activeEndMs / 1000, true);
   };
 
   // Transcript Editing Handlers
   const handleStartTextEdit = () => {
     if (!currentSegment) return;
+    cancelCountdown();
+    stopPlaybackAtBoundary();
     setDraftText(currentSegment.text);
     setTextEditError(null);
     setIsEditingText(true);
@@ -495,6 +864,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       return;
     }
 
+    cancelCountdown();
     setIsSavingBounds(true);
     setBoundsError(null);
 
@@ -546,6 +916,9 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
         handleReplay();
+      } else if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        handleToggleLoop();
       } else if (e.key === 't' || e.key === 'T') {
         e.preventDefault();
         setIsMasked((prev) => !prev);
@@ -566,6 +939,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   }, [
     handlePlayPause,
     handleReplay,
+    handleToggleLoop,
     handlePreviousClip,
     handleNextClip,
     handleExit,
@@ -574,12 +948,13 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      cancelCountdown();
       clearStopTimer();
       if (audioRef.current) {
         audioRef.current.pause();
       }
     };
-  }, [clearStopTimer]);
+  }, [cancelCountdown, clearStopTimer]);
 
   if (!currentSegment || segments.length === 0) {
     return (
@@ -673,7 +1048,16 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
               </span>
               <button
                 className={`player-bounds-toggle-btn ${isAdjustingBounds ? 'active' : ''}`}
-                onClick={() => setIsAdjustingBounds((prev) => !prev)}
+                onClick={() => {
+                  setIsAdjustingBounds((prev) => {
+                    const next = !prev;
+                    if (next) {
+                      cancelCountdown();
+                      stopPlaybackAtBoundary();
+                    }
+                    return next;
+                  });
+                }}
                 aria-label="Toggle boundary adjustment drawer"
                 title="Adjust clip start and end boundaries"
               >
@@ -907,6 +1291,44 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
                   <span>Edit Text</span>
                 </button>
               </div>
+
+              {/* Auto-Pause Countdown Banner */}
+              {countdownState.isActive && (
+                <div
+                  className={`player-countdown-card ${countdownState.isPaused ? 'paused' : 'active'}`}
+                  role="status"
+                  aria-live="polite"
+                  data-testid="countdown-card"
+                >
+                  <div className="player-countdown-header">
+                    <div className="player-countdown-label">
+                      <RotateCcw size={14} className={countdownState.isPaused ? '' : 'spin-slow'} />
+                      <span>
+                        {countdownState.isPaused
+                          ? `Paused: ${(countdownState.remainingMs / 1000).toFixed(1)}s (Press Space to resume)`
+                          : `Repeat aloud: ${(countdownState.remainingMs / 1000).toFixed(1)}s`}
+                      </span>
+                    </div>
+                    <span className="player-countdown-multiplier-tag">
+                      {pauseMultiplier.toFixed(1)}x pause
+                    </span>
+                  </div>
+                  <div className="player-countdown-track" aria-hidden="true">
+                    <div
+                      className="player-countdown-fill"
+                      style={{
+                        width: `${Math.max(
+                          0,
+                          Math.min(
+                            100,
+                            (countdownState.remainingMs / (countdownState.totalMs || 1)) * 100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -936,6 +1358,48 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
           </div>
         </section>
 
+        {/* Auto-Pause Loop Controls */}
+        <section className="player-loop-section" aria-label="Auto-Pause Loop controls">
+          <div className="player-loop-left">
+            <button
+              className={`player-loop-btn ${isLoopMode ? 'active' : ''}`}
+              onClick={handleToggleLoop}
+              aria-pressed={isLoopMode}
+              aria-label={isLoopMode ? 'Disable Auto-Pause Loop' : 'Enable Auto-Pause Loop'}
+              title="Toggle Auto-Pause Loop (L)"
+            >
+              <Repeat size={15} />
+              <span>Loop</span>
+              <kbd className="player-loop-kbd">L</kbd>
+            </button>
+          </div>
+
+          {isLoopMode && (
+            <div
+              className="player-multiplier-group"
+              role="radiogroup"
+              aria-label="Pause duration multiplier"
+            >
+              <span className="player-multiplier-label">Pause:</span>
+              {MULTIPLIER_PRESETS.map((mult) => {
+                const isSelected = pauseMultiplier === mult;
+                return (
+                  <button
+                    key={mult}
+                    className={`player-multiplier-btn ${isSelected ? 'active' : ''}`}
+                    onClick={() => handleMultiplierChange(mult)}
+                    role="radio"
+                    aria-checked={isSelected}
+                    aria-label={`${mult.toFixed(1)} times segment duration pause`}
+                  >
+                    {mult.toFixed(1)}x
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         {/* Primary Controls Row: Previous, Play/Pause, Replay, Next */}
         <section className="player-controls-section" aria-label="Audio controls">
           <button
@@ -952,10 +1416,22 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
           <button
             className="player-main-play-btn"
             onClick={handlePlayPause}
-            aria-label={isPlaying ? 'Pause clip' : 'Play clip'}
-            title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+            aria-label={
+              isPlaying || (countdownState.isActive && !countdownState.isPaused)
+                ? 'Pause clip'
+                : 'Play clip'
+            }
+            title={
+              isPlaying || (countdownState.isActive && !countdownState.isPaused)
+                ? 'Pause (Space)'
+                : 'Play (Space)'
+            }
           >
-            {isPlaying ? <Pause size={28} /> : <Play size={28} style={{ marginLeft: '3px' }} />}
+            {isPlaying || (countdownState.isActive && !countdownState.isPaused) ? (
+              <Pause size={28} />
+            ) : (
+              <Play size={28} style={{ marginLeft: '3px' }} />
+            )}
           </button>
 
           <button
@@ -995,6 +1471,9 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       <footer className="player-shortcuts-footer" aria-label="Keyboard shortcuts legend">
         <span className="shortcut-item">
           <kbd>Space</kbd> Play/Pause
+        </span>
+        <span className="shortcut-item">
+          <kbd>L</kbd> Loop
         </span>
         <span className="shortcut-item">
           <kbd>R</kbd> Replay
