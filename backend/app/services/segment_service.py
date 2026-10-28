@@ -16,6 +16,7 @@ from backend.app.schemas.segment import (
     SegmentSplitResponse,
     SegmentUpdate,
 )
+from backend.app.services.recording_service import RecordingService
 
 
 class SegmentService:
@@ -305,6 +306,7 @@ class SegmentService:
             primary.raw_transcript = combined_raw
             primary.is_edited = True
             absorbed_seq = absorbed.sequence_index
+            await RecordingService.delete_recordings_for_segment(session, absorbed.id)
             await session.delete(absorbed)
         else:
             primary = neighbor
@@ -317,6 +319,7 @@ class SegmentService:
             primary.raw_transcript = combined_raw
             primary.is_edited = True
             absorbed_seq = absorbed.sequence_index
+            await RecordingService.delete_recordings_for_segment(session, absorbed.id)
             await session.delete(absorbed)
 
         await session.flush()

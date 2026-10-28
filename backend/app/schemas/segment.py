@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class RecordingRead(BaseModel):
@@ -11,10 +11,18 @@ class RecordingRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    duration_ms: int
+    segment_id: str
     take_number: int
+    duration_ms: int
     is_active: bool
     created_at: datetime
+    audio_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def populate_audio_url(self) -> RecordingRead:
+        if not self.audio_url:
+            self.audio_url = f"/api/recordings/{self.id}/audio"
+        return self
 
 
 class SegmentRead(BaseModel):

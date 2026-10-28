@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.routes.media import router as media_router
 from backend.app.api.routes.projects import router as projects_router
+from backend.app.api.routes.recordings import router as recordings_router
 from backend.app.api.routes.segments import router as segments_router
 from backend.app.api.routes.system import router as system_router
 from backend.app.core.config import settings
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     # Register API routers
     app.include_router(projects_router, prefix=settings.api_prefix)
     app.include_router(segments_router, prefix=settings.api_prefix)
+    app.include_router(recordings_router, prefix=settings.api_prefix)
     app.include_router(media_router, prefix=settings.api_prefix)
     app.include_router(system_router, prefix=settings.api_prefix)
 

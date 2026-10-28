@@ -63,6 +63,8 @@ def create_range_streaming_response(
 
     file_size = file_path.stat().st_size
     mime_type = mimetypes.guess_type(str(file_path))[0] or default_mime
+    if mime_type == "video/webm" and file_path.suffix.lower() == ".webm":
+        mime_type = "audio/webm"
     range_header = request.headers.get("Range")
 
     if not range_header:
