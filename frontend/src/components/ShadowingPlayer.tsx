@@ -911,16 +911,6 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
           )}
         </div>
 
-        {/* Vocal Recording Studio & Local Takes */}
-        <RecordingStudio
-          ref={recordingStudioRef}
-          segment={currentSegment}
-          isMasterPlaying={isPlaying}
-          onStopMasterPlayback={handleStopMasterPlayback}
-          onRecordingCountChange={handleRecordingCountChange}
-          onBusyStateChange={handleBusyStateChange}
-        />
-
         {/* Playback Speed Controls */}
         <section className="player-speed-section" aria-label="Playback speed selection">
           <div className="player-speed-label">
@@ -989,6 +979,16 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
             <ChevronRight size={22} />
           </button>
         </section>
+
+        {/* Vocal Recording Studio & Local Takes */}
+        <RecordingStudio
+          ref={recordingStudioRef}
+          segment={currentSegment}
+          isMasterPlaying={isPlaying}
+          onStopMasterPlayback={handleStopMasterPlayback}
+          onRecordingCountChange={handleRecordingCountChange}
+          onBusyStateChange={handleBusyStateChange}
+        />
       </main>
 
       {/* Desktop Keyboard Shortcuts Legend */}
