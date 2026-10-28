@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { SegmentRead, getMasterAudioUrl, updateSegment } from '../api/client';
 import { formatMs } from '../utils/formatters';
+import { RecordingStudio, RecordingStudioHandle } from './RecordingStudio';
 
 export interface ShadowingPlayerProps {
   projectId: string;
@@ -82,6 +83,15 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
   const [draftEndMs, setDraftEndMs] = useState(0);
   const [isSavingBounds, setIsSavingBounds] = useState(false);
   const [boundsError, setBoundsError] = useState<string | null>(null);
+
+  // Vocal Recording Studio State & Ref
+  const recordingStudioRef = useRef<RecordingStudioHandle | null>(null);
+  const [recordingBusyState, setRecordingBusyState] = useState({
+    isBusy: false,
+    isUploading: false,
+    isReviewPending: false,
+  });
+  const [pendingNavAction, setPendingNavAction] = useState<'prev' | 'next' | 'exit' | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimerRef = useRef<number | null>(null);
@@ -251,8 +261,36 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       });
   }, [clearStopTimer, draftStartMs, draftEndMs, scheduleStopTimer]);
 
+  // Recording Studio Callbacks
+  const handleBusyStateChange = useCallback(
+    (isBusy: boolean, isUploading: boolean, isReviewPending: boolean) => {
+      setRecordingBusyState({ isBusy, isUploading, isReviewPending });
+    },
+    []
+  );
+
+  const handleStopMasterPlayback = useCallback(() => {
+    clearStopTimer();
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+    }
+    setIsPlaying(false);
+  }, [clearStopTimer]);
+
+  const handleRecordingCountChange = useCallback(
+    (newCount: number) => {
+      if (!currentSegment) return;
+      const updated = { ...currentSegment, recordings_count: newCount };
+      setSegments((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s))
+      );
+      onSegmentUpdate?.(updated);
+    },
+    [currentSegment, onSegmentUpdate]
+  );
+
   // Navigate to previous clip
-  const handlePreviousClip = useCallback(() => {
+  const executePreviousClip = useCallback(() => {
     if (currentIndex <= 0) return;
     clearStopTimer();
     const prevIndex = currentIndex - 1;
@@ -269,8 +307,19 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     setIsMasked(defaultBlindMode);
   }, [clearStopTimer, currentIndex, defaultBlindMode, segments]);
 
+  const handlePreviousClip = useCallback(() => {
+    if (currentIndex <= 0) return;
+    const studio = recordingStudioRef.current;
+    if (studio?.isUploading() || recordingBusyState.isUploading) return;
+    if (studio?.isBusy() || recordingBusyState.isBusy) {
+      setPendingNavAction('prev');
+      return;
+    }
+    executePreviousClip();
+  }, [currentIndex, recordingBusyState, executePreviousClip]);
+
   // Navigate to next clip
-  const handleNextClip = useCallback(() => {
+  const executeNextClip = useCallback(() => {
     if (currentIndex >= segments.length - 1) return;
     clearStopTimer();
     const nextIndex = currentIndex + 1;
@@ -286,6 +335,45 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     setCurrentIndex(nextIndex);
     setIsMasked(defaultBlindMode);
   }, [clearStopTimer, currentIndex, defaultBlindMode, segments]);
+
+  const handleNextClip = useCallback(() => {
+    if (currentIndex >= segments.length - 1) return;
+    const studio = recordingStudioRef.current;
+    if (studio?.isUploading() || recordingBusyState.isUploading) return;
+    if (studio?.isBusy() || recordingBusyState.isBusy) {
+      setPendingNavAction('next');
+      return;
+    }
+    executeNextClip();
+  }, [currentIndex, segments.length, recordingBusyState, executeNextClip]);
+
+  // Exit back to overview
+  const handleExit = useCallback(() => {
+    const studio = recordingStudioRef.current;
+    if (studio?.isUploading() || recordingBusyState.isUploading) return;
+    if (studio?.isBusy() || recordingBusyState.isBusy) {
+      setPendingNavAction('exit');
+      return;
+    }
+    onExit(currentIndexRef.current);
+  }, [recordingBusyState, onExit]);
+
+  const handleStay = useCallback(() => {
+    setPendingNavAction(null);
+  }, []);
+
+  const handleDiscardAndProceed = useCallback(() => {
+    recordingStudioRef.current?.cancelAndDiscard();
+    const action = pendingNavAction;
+    setPendingNavAction(null);
+    if (action === 'prev') {
+      executePreviousClip();
+    } else if (action === 'next') {
+      executeNextClip();
+    } else if (action === 'exit') {
+      onExit(currentIndexRef.current);
+    }
+  }, [pendingNavAction, executePreviousClip, executeNextClip, onExit]);
 
   // Change playback speed
   const handleSpeedChange = useCallback(
@@ -469,7 +557,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
         handleNextClip();
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        onExit(currentIndexRef.current);
+        handleExit();
       }
     };
 
@@ -480,7 +568,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
     handleReplay,
     handlePreviousClip,
     handleNextClip,
-    onExit,
+    handleExit,
   ]);
 
   // Cleanup on unmount
@@ -533,7 +621,8 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
       <header className="player-header">
         <button
           className="player-back-btn"
-          onClick={() => onExit(currentIndex)}
+          onClick={handleExit}
+          disabled={recordingBusyState.isUploading}
           aria-label="Back to project overview"
         >
           <ArrowLeft size={16} />
@@ -822,6 +911,16 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
           )}
         </div>
 
+        {/* Vocal Recording Studio & Local Takes */}
+        <RecordingStudio
+          ref={recordingStudioRef}
+          segment={currentSegment}
+          isMasterPlaying={isPlaying}
+          onStopMasterPlayback={handleStopMasterPlayback}
+          onRecordingCountChange={handleRecordingCountChange}
+          onBusyStateChange={handleBusyStateChange}
+        />
+
         {/* Playback Speed Controls */}
         <section className="player-speed-section" aria-label="Playback speed selection">
           <div className="player-speed-label">
@@ -852,7 +951,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
           <button
             className="player-nav-btn"
             onClick={handlePreviousClip}
-            disabled={isFirstClip}
+            disabled={isFirstClip || recordingBusyState.isUploading}
             aria-label="Previous clip"
             title="Previous clip (Left arrow)"
           >
@@ -882,7 +981,7 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
           <button
             className="player-nav-btn"
             onClick={handleNextClip}
-            disabled={isLastClip}
+            disabled={isLastClip || recordingBusyState.isUploading}
             aria-label="Next clip"
             title="Next clip (Right arrow)"
           >
@@ -910,6 +1009,42 @@ export const ShadowingPlayer: React.FC<ShadowingPlayerProps> = ({
           <kbd>Esc</kbd> Exit
         </span>
       </footer>
+
+      {/* Navigation Guard Confirmation Modal */}
+      {pendingNavAction && (
+        <div
+          className="player-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="discard-modal-title"
+        >
+          <div className="player-modal-box">
+            <h3 id="discard-modal-title" className="player-modal-title">
+              Discard Unsaved Recording?
+            </h3>
+            <p className="player-modal-desc">
+              {(recordingStudioRef.current?.isReviewPending() || recordingBusyState.isReviewPending)
+                ? 'You have an unsaved take awaiting review. If you leave now, this recording will be discarded.'
+                : 'A recording is currently in progress. If you leave now, the recording will be cancelled and discarded.'}
+            </p>
+            <div className="player-modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={handleStay}
+                autoFocus
+              >
+                Stay on Clip
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={handleDiscardAndProceed}
+              >
+                Discard & Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

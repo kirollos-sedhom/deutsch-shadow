@@ -2,14 +2,83 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ShadowingPlayer } from './ShadowingPlayer';
 import { SegmentRead, updateSegment } from '../api/client';
+import * as client from '../api/client';
 
 vi.mock('../api/client', async () => {
   const actual = await vi.importActual<typeof import('../api/client')>('../api/client');
   return {
     ...actual,
     updateSegment: vi.fn(),
+    getRecordings: vi.fn().mockResolvedValue([]),
+    uploadRecording: vi.fn(),
+    deleteRecording: vi.fn(),
+    setActiveTake: vi.fn(),
+    getRecordingAudioUrl: vi.fn((id: string) => `/api/recordings/${id}/audio`),
   };
 });
+
+class MockMediaStreamTrack {
+  kind = 'audio';
+  enabled = true;
+  readyState = 'live';
+  stop = vi.fn(() => {
+    this.readyState = 'ended';
+  });
+}
+
+class MockMediaStream {
+  tracks: MockMediaStreamTrack[];
+  constructor(tracks?: MockMediaStreamTrack[]) {
+    this.tracks = tracks || [new MockMediaStreamTrack()];
+  }
+  getTracks() {
+    return this.tracks;
+  }
+  getAudioTracks() {
+    return this.tracks.filter((t) => t.kind === 'audio');
+  }
+}
+
+class MockMediaRecorder extends EventTarget {
+  state: 'inactive' | 'recording' | 'paused' = 'inactive';
+  stream: MockMediaStream;
+  mimeType: string;
+  ondataavailable: ((event: { data: Blob }) => void) | null = null;
+  onstop: (() => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+
+  static isTypeSupported = vi.fn((mime: string) => mime.includes('webm'));
+
+  constructor(stream: MockMediaStream, options?: { mimeType?: string }) {
+    super();
+    this.stream = stream;
+    this.mimeType = options?.mimeType || 'audio/webm';
+  }
+
+  start = vi.fn(() => {
+    this.state = 'recording';
+  });
+
+  pause = vi.fn(() => {
+    this.state = 'paused';
+  });
+
+  resume = vi.fn(() => {
+    this.state = 'recording';
+  });
+
+  stop = vi.fn(() => {
+    this.state = 'inactive';
+    if (this.ondataavailable) {
+      this.ondataavailable({
+        data: new Blob(['audio-data'], { type: this.mimeType }),
+      });
+    }
+    if (this.onstop) {
+      this.onstop();
+    }
+  });
+}
 
 const mockSegments: SegmentRead[] = [
   {
@@ -59,6 +128,25 @@ const mockSegments: SegmentRead[] = [
 describe('ShadowingPlayer Component', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue(new MockMediaStream()),
+      },
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, 'MediaRecorder', {
+      value: MockMediaRecorder,
+      writable: true,
+      configurable: true,
+    });
+    if (!window.URL.createObjectURL) {
+      window.URL.createObjectURL = vi.fn(() => 'blob:mock-review-url');
+    }
+    if (!window.URL.revokeObjectURL) {
+      window.URL.revokeObjectURL = vi.fn();
+    }
   });
 
   it('renders focused clip view with clip number, progress, and timing', () => {
@@ -652,6 +740,185 @@ describe('ShadowingPlayer Component', () => {
       expect(screen.getByText('Boundary collision rejected')).toBeInTheDocument();
       // Draft remains at 4700ms!
       expect(screen.getByText('00:04.700')).toBeInTheDocument();
+    });
+  });
+
+  it('warns before navigating Prev/Next when recording is active and allows staying or discarding', async () => {
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={1}
+        onExit={vi.fn()}
+      />
+    );
+
+    // Initial clip is Clip 2 / 3
+    expect(screen.getByText('Clip 2 / 3')).toBeInTheDocument();
+
+    // Start recording
+    const recordBtn = screen.getByRole('button', { name: /start recording your voice/i });
+    fireEvent.click(recordBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('REC')).toBeInTheDocument();
+    });
+
+    // Try navigating to Next clip
+    const nextBtn = screen.getByRole('button', { name: /^next clip/i });
+    fireEvent.click(nextBtn);
+
+    // Modal appears
+    expect(screen.getByText('Discard Unsaved Recording?')).toBeInTheDocument();
+    expect(screen.getByText(/A recording is currently in progress/i)).toBeInTheDocument();
+
+    // Choose "Stay on Clip"
+    fireEvent.click(screen.getByRole('button', { name: /stay on clip/i }));
+    expect(screen.queryByText('Discard Unsaved Recording?')).not.toBeInTheDocument();
+    expect(screen.getByText('Clip 2 / 3')).toBeInTheDocument();
+
+    // Try navigating again and choose "Discard & Proceed"
+    fireEvent.click(nextBtn);
+    expect(screen.getByText('Discard Unsaved Recording?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /discard & proceed/i }));
+
+    // Successfully navigated to Clip 3 / 3
+    await waitFor(() => {
+      expect(screen.queryByText('Discard Unsaved Recording?')).not.toBeInTheDocument();
+      expect(screen.getByText('Clip 3 / 3')).toBeInTheDocument();
+    });
+  });
+
+  it('warns before returning to overview when take review is pending and exits on discard', async () => {
+    const onExit = vi.fn();
+
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={0}
+        onExit={onExit}
+      />
+    );
+
+    // Record and then Stop
+    fireEvent.click(screen.getByRole('button', { name: /start recording your voice/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /stop recording and review/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /stop recording and review/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Take Complete')).toBeInTheDocument();
+    });
+
+    // Click Overview button
+    const overviewBtn = screen.getByRole('button', { name: /back to project overview/i });
+    fireEvent.click(overviewBtn);
+
+    // Modal appears mentioning unsaved take
+    expect(screen.getByText('Discard Unsaved Recording?')).toBeInTheDocument();
+    expect(screen.getByText(/You have an unsaved take awaiting review/i)).toBeInTheDocument();
+
+    // Click Discard & Proceed
+    fireEvent.click(screen.getByRole('button', { name: /discard & proceed/i }));
+    expect(onExit).toHaveBeenCalledWith(0);
+  });
+
+  it('disables Prev, Next, and Overview navigation buttons while take upload is in progress', async () => {
+    // Return a promise that does not resolve immediately
+    let resolveUpload!: (val: client.RecordingRead) => void;
+    vi.mocked(client.uploadRecording).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpload = resolve;
+        })
+    );
+
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={1}
+        onExit={vi.fn()}
+      />
+    );
+
+    // Record -> Stop -> Save
+    fireEvent.click(screen.getByRole('button', { name: /start recording your voice/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /stop recording and review/i })).toBeInTheDocument();
+    });
+
+    // Allow at least 60ms to elapse so recorded duration exceeds minimum duration threshold (50ms)
+    await new Promise((resolve) => setTimeout(resolve, 70));
+
+    fireEvent.click(screen.getByRole('button', { name: /stop recording and review/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /save vocal take/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /save vocal take/i }));
+
+    // While uploading, navigation buttons are disabled
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^previous clip/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /^next clip/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /back to project overview/i })).toBeDisabled();
+    });
+
+    // Resolve upload
+    resolveUpload({
+      id: 'rec-1',
+      segment_id: 'seg-2',
+      take_number: 1,
+      duration_ms: 1500,
+      is_active: true,
+      created_at: '2026-10-28T12:00:00Z',
+      audio_url: '/api/recordings/rec-1/audio',
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^previous clip/i })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /^next clip/i })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: /back to project overview/i })).not.toBeDisabled();
+    });
+  });
+
+  it('mutual exclusion: starting recording pauses active master playback', async () => {
+    vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const pauseSpy = vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
+    render(
+      <ShadowingPlayer
+        projectId="proj-1"
+        projectTitle="Test Project"
+        segments={mockSegments}
+        initialSegmentIndex={0}
+        onExit={vi.fn()}
+      />
+    );
+
+    // Start master audio
+    const mainPlayBtn = screen.getByRole('button', { name: /^play clip$/i });
+    fireEvent.click(mainPlayBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^pause clip$/i })).toBeInTheDocument();
+    });
+
+    // Now start recording
+    const recordBtn = screen.getByRole('button', { name: /start recording your voice/i });
+    fireEvent.click(recordBtn);
+
+    await waitFor(() => {
+      expect(pauseSpy).toHaveBeenCalled();
+      // Master play button returns to "play clip"
+      expect(screen.getByRole('button', { name: /^play clip$/i })).toBeInTheDocument();
     });
   });
 });

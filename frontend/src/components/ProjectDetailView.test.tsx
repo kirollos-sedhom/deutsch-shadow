@@ -9,6 +9,11 @@ vi.mock('../api/client', () => ({
   processProject: vi.fn(),
   getMasterAudioUrl: vi.fn((id: string) => `/api/media/${id}/master`),
   updateSegment: vi.fn(),
+  getRecordings: vi.fn().mockResolvedValue([]),
+  uploadRecording: vi.fn(),
+  deleteRecording: vi.fn(),
+  setActiveTake: vi.fn(),
+  getRecordingAudioUrl: vi.fn((id: string) => `/api/recordings/${id}/audio`),
 }));
 
 describe('ProjectDetailView Component & Blind Mode', () => {

@@ -16,7 +16,7 @@
 | **4** | Database & Backend API | 🟢 **Completed** | SQLite schema & FastAPI endpoints verified | Completed |
 | **5** | Recording Library & Import Interface | 🟢 **Completed** | React/TypeScript SPA + Vite + FastAPI verified | Completed |
 | **6** | Shadowing Player, Transcript Editing & Boundaries | 🟢 **Completed** | Core player, transcript editing & boundaries verified | Completed |
-| **7** | Microphone Recording & Persistent Storage | ⚪ Planned | Depends on Milestone 6 | Milestone 7 |
+| **7** | Microphone Recording & Persistent Storage | 🟡 **Phase 3 Complete** | Phases 1–3 implemented & verified; ready for Phase 4 verification | Milestone 7 |
 | **8** | Auto-Pause Loop & Instant Comparison | ⚪ Planned | Depends on Milestone 7 | Milestone 8 |
 | **9** | Test, Fix Bugs & Polish MVP | ⚪ Planned | Depends on Milestone 8 | Milestone 9 |
 
@@ -131,6 +131,35 @@
     - **Automated Verification:**
       - **38/38 frontend tests passing** via Vitest (100% pass rate).
       - **51/51 backend tests passing** via pytest (100% pass rate).
+      - **TypeScript check and production build verified:** zero compilation or type errors.
+
+11. **Milestone 7 Phase 1 Backend Recording Persistence & API (Verified):**
+    - **Physical Audio Storage:** Audio takes stored locally under `data/projects/{project_id}/recordings/{recording_id}.{ext}` with atomic temp-file write-then-rename and clean rollback.
+    - **SQLite Metadata Model:** `recordings` table with `id`, `segment_id`, `take_number`, `duration_ms`, `is_active`, `created_at`, cascading foreign key on segment deletion, and sequential take numbering per segment.
+    - **Format Validation & Inspection:** Safe MIME and container extension validation supporting WebM Opus (`audio/webm`), Ogg Opus (`audio/ogg`), MP4 AAC (`audio/mp4`), and WAV (`audio/wav`), rejecting mismatched extensions or corrupted headers.
+    - **Automatic Active Take Designation:** New takes automatically designated active; deleting an active take promotes the latest remaining take; deleting all takes resets segment `recordings_count` to 0.
+    - **Split/Merge Safeguards:** Explicitly blocked splitting segments that have user recordings to prevent audio mismatch; merge cleans up and reassigns recordings safely.
+    - **Automated Verification:**
+      - **73/73 backend tests passing** via pytest (100% pass rate).
+
+12. **Milestone 7 Phase 2 Frontend API Client & Capture Hook (Verified):**
+    - **API Client:** Added typed methods in `client.ts` (`getRecordings`, `uploadRecording`, `deleteRecording`, `setActiveTake`, `getRecordingAudioUrl`, `getAudioExtensionFromMime`).
+    - **Microphone Capture Hook:** Hardened `useAudioRecorder.ts` with permission lifecycle, supported MIME negotiation, hardware track release, error abort guards, and monotonic timer tracking.
+    - **Automated Verification:**
+      - **33/33 frontend hook & API tests passing** via Vitest (100% pass rate).
+
+13. **Milestone 7 Phase 3 ShadowingPlayer UI & Take Management (Verified):**
+    - **Recording Studio Component:** `RecordingStudio.tsx` implementing idle, active recording, pause/resume, review before save, discard, and re-record workflows.
+    - **Saved Takes Management:** Sequential take badges, active take designation (`is_active` star indicator), inline two-step delete confirmation, and take audio playback.
+    - **Bidirectional Mutual Audio Exclusion:** Starting recording or playing a user take immediately halts original German master playback; playing master playback pauses review preview or take audio.
+    - **Robust Navigation Guarding:** Synchronous ref and reactive guards on Prev, Next, Overview button, and Escape key:
+      - Active recording / review pending: confirmation modal with `[Stay on Clip]` and `[Discard & Proceed]`.
+      - In-flight upload: Prev, Next, and Overview navigation controls disabled until upload settles.
+      - Discarding cleans up media tracks, resets recorder state, and revokes Blob object URLs.
+    - **Session Caching:** In-memory caching of takes per segment across clip navigation, updated consistently on save, active toggle, and delete.
+    - **Automated Verification:**
+      - **91/91 frontend tests passing** via Vitest (100% pass rate).
+      - **73/73 backend tests passing** via pytest (100% pass rate).
       - **TypeScript check and production build verified:** zero compilation or type errors.
 
 ---
