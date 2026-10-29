@@ -186,10 +186,10 @@ This checklist specifies the sequential implementation roadmap for the **Deutsch
 - **Goal:** Enable learners to record their own voice practicing each segment, replay their recording, and store all takes persistently on disk and in SQLite.
 - **Prerequisites:** Milestone 6 complete.
 - **Tasks:**
-  - [ ] Implement browser microphone capture using `MediaRecorder` API or `AudioWorklet`.
-  - [ ] Build recording controls in the shadowing player (Record button, hotkey `M`, visual recording indicator/timer).
-  - [ ] Implement client-to-server audio upload (`POST /api/segments/{id}/recordings`) saving recordings in `data/projects/{project_id}/recordings/`.
-  - [ ] Build Take Selector UI:
+  - [x] Implement browser microphone capture using `MediaRecorder` API or `AudioWorklet`.
+  - [x] Build recording controls in the shadowing player (Record button, hotkey `M`, visual recording indicator/timer).
+  - [x] Implement client-to-server audio upload (`POST /api/segments/{id}/recordings`) saving recordings in `data/projects/{project_id}/recordings/`.
+  - [x] Build Take Selector UI:
     - Display list of recorded takes per segment with timestamps.
     - Replay user's recorded take.
     - Delete unwanted takes.

@@ -1,9 +1,16 @@
 """Integration test for Milestone 5 frontend REST API contracts."""
 
 import io
+from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from backend.app.main import app
+from backend.app.core.config import settings
+from backend.app.api.routes.projects import (
+    is_pipeline_task_active,
+    mark_pipeline_task_active,
+    unmark_pipeline_task_active,
+)
 
 
 @pytest.fixture
@@ -120,5 +127,98 @@ def test_async_process_and_duplicate_protection(client):
 
     finally:
         # Clean up
+        client.delete(f"/api/projects/{project_id}")
+
+
+def test_stale_processing_project_recovers_after_restart(client):
+    """Verify that a project stuck in 'processing' from a prior process death can be retried and enqueued."""
+    wav_content = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+    files = {"file": ("stale_test.wav", io.BytesIO(wav_content), "audio/wav")}
+    data = {"title": "Stale Processing Project", "auto_process": "false"}
+    import_resp = client.post("/api/projects/import", files=files, data=data)
+    assert import_resp.status_code == 201
+    project_id = import_resp.json()["project_id"]
+
+    try:
+        # Simulate a prior crash/kill leaving the project in 'processing' status in SQLite
+        import sqlite3
+        conn = sqlite3.connect(settings.database_path)
+        conn.execute("UPDATE projects SET status = ? WHERE id = ?", ("processing", project_id))
+        conn.commit()
+        conn.close()
+
+        # Simulate backend restart: no background task is active in this process
+        assert not is_pipeline_task_active(project_id)
+
+        # Trigger /process retry: it must recognize that no task is running and enqueue a new task
+        with patch("backend.app.api.routes.projects.run_pipeline_in_background") as mock_task:
+            retry_resp = client.post(f"/api/projects/{project_id}/process")
+            assert retry_resp.status_code == 200
+            assert retry_resp.json()["status"] == "processing"
+            assert mock_task.called, "Expected run_pipeline_in_background to be enqueued for stale project"
+
+    finally:
+        unmark_pipeline_task_active(project_id)
+        client.delete(f"/api/projects/{project_id}")
+
+
+def test_genuinely_running_task_blocks_duplicate_enqueue(client):
+    """Verify that a genuinely running in-memory task is not duplicated by repeated process requests."""
+    wav_content = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+    files = {"file": ("dup_check.wav", io.BytesIO(wav_content), "audio/wav")}
+    data = {"title": "Active Task Duplicate Test", "auto_process": "false"}
+    import_resp = client.post("/api/projects/import", files=files, data=data)
+    assert import_resp.status_code == 201
+    project_id = import_resp.json()["project_id"]
+
+    try:
+        # Mark active in-memory task (simulating currently running Whisper transcription)
+        mark_pipeline_task_active(project_id)
+        assert is_pipeline_task_active(project_id)
+
+        with patch("backend.app.api.routes.projects.run_pipeline_in_background") as mock_task:
+            dup_resp = client.post(f"/api/projects/{project_id}/process")
+            assert dup_resp.status_code == 200
+            assert dup_resp.json()["status"] == "pending" or dup_resp.json()["status"] == "processing"
+            assert not mock_task.called, "Expected duplicate process request to be blocked while task is running"
+
+    finally:
+        unmark_pipeline_task_active(project_id)
+        client.delete(f"/api/projects/{project_id}")
+
+
+def test_existing_ready_projects_unaffected_by_process_tracking(client):
+    """Verify that existing successful ('ready') projects remain unaffected and retrievable."""
+    wav_content = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+    files = {"file": ("ready_check.wav", io.BytesIO(wav_content), "audio/wav")}
+    data = {"title": "Existing Ready Project", "auto_process": "false"}
+    import_resp = client.post("/api/projects/import", files=files, data=data)
+    assert import_resp.status_code == 201
+    project_id = import_resp.json()["project_id"]
+
+    try:
+        # Manually set project status to ready
+        import sqlite3
+        conn = sqlite3.connect(settings.database_path)
+        conn.execute("UPDATE projects SET status = ? WHERE id = ?", ("ready", project_id))
+        conn.commit()
+        conn.close()
+
+        # Check detail endpoint
+        detail_resp = client.get(f"/api/projects/{project_id}")
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["status"] == "ready"
+
+        # Check list endpoint
+        list_resp = client.get("/api/projects")
+        assert list_resp.status_code == 200
+        matching = [p for p in list_resp.json() if p["id"] == project_id]
+        assert len(matching) == 1
+        assert matching[0]["status"] == "ready"
+
+        # Task tracking should be clean
+        assert not is_pipeline_task_active(project_id)
+
+    finally:
         client.delete(f"/api/projects/{project_id}")
 

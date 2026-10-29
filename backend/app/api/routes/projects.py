@@ -1,7 +1,8 @@
 """Project management and media import API routes."""
 
 from __future__ import annotations
-from typing import List, Optional
+import asyncio
+from typing import List, Optional, Set
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -28,15 +29,39 @@ from backend.app.services.segment_service import SegmentService
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
+# In-memory registry of project IDs currently being processed by a live background task in this process.
+# Distinguishes genuinely active running jobs from stale "processing" database records left by terminated processes.
+_active_pipeline_tasks: Set[str] = set()
+_tasks_lock = asyncio.Lock()
+
+
+def is_pipeline_task_active(project_id: str) -> bool:
+    """Return True if a pipeline background task is currently active or queued in this process."""
+    return project_id in _active_pipeline_tasks
+
+
+def mark_pipeline_task_active(project_id: str) -> None:
+    """Register project_id as having an active in-flight pipeline background task."""
+    _active_pipeline_tasks.add(project_id)
+
+
+def unmark_pipeline_task_active(project_id: str) -> None:
+    """Unregister project_id when its pipeline background task finishes, fails, or is cancelled."""
+    _active_pipeline_tasks.discard(project_id)
+
 
 async def run_pipeline_in_background(project_id: str):
     """Background task to run the audio pipeline for an imported project."""
-    async with AsyncSessionLocal() as session:
-        try:
-            await ProjectService.process_project_pipeline(session, project_id)
-        except Exception:
-            # Error status is already saved in database by process_project_pipeline
-            pass
+    try:
+        async with AsyncSessionLocal() as session:
+            try:
+                await ProjectService.process_project_pipeline(session, project_id)
+            except Exception:
+                # Error status is already saved in database by process_project_pipeline
+                pass
+    finally:
+        async with _tasks_lock:
+            unmark_pipeline_task_active(project_id)
 
 
 @router.get(
@@ -75,6 +100,8 @@ async def import_project(
     )
 
     if auto_process:
+        async with _tasks_lock:
+            mark_pipeline_task_active(project.id)
         background_tasks.add_task(run_pipeline_in_background, project.id)
 
     return ProjectImportResponse(
@@ -118,11 +145,15 @@ async def process_project(
             detail=f"Project '{project_id}' not found",
         )
 
-    # Duplicate job protection: do not spin up a second pipeline if already processing
-    if project.status == "processing":
-        return await ProjectService.get_project_detail(session, project_id)
+    async with _tasks_lock:
+        # Duplicate job protection: only block if a task is genuinely active in the current process
+        if is_pipeline_task_active(project_id):
+            return await ProjectService.get_project_detail(session, project_id)
 
-    # Set status to processing and clear previous error
+        # Register active in-memory task BEFORE queuing to protect against immediate duplicate requests
+        mark_pipeline_task_active(project_id)
+
+    # Set status to processing and clear previous error (recovering stale processing or failed state)
     project.status = "processing"
     project.error_message = None
     await session.commit()
@@ -143,6 +174,8 @@ async def delete_project(
     session: AsyncSession = Depends(get_db),
 ) -> None:
     """Cascade delete the project from SQLite and erase all related files on disk."""
+    async with _tasks_lock:
+        unmark_pipeline_task_active(project_id)
     await ProjectService.delete_project(session, project_id)
 
 
