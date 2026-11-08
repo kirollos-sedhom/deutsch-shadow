@@ -4,6 +4,7 @@ import { ProjectList } from './components/ProjectList';
 import { ProjectDetailView } from './components/ProjectDetailView';
 import { ImportModal } from './components/ImportModal';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
+import { LoginView } from './components/LoginView';
 import {
   ProjectSummary,
   SystemCapabilities,
@@ -14,6 +15,9 @@ import {
   processProject,
   getSystemCapabilities,
   getWhisperModels,
+  getAuthStatus,
+  logout,
+  setUnauthorizedHandler,
 } from './api/client';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 
@@ -23,7 +27,14 @@ interface BackgroundNotification {
   whisperModel: string;
 }
 
+type AuthState = 'checking' | 'authenticated' | 'unauthenticated' | 'connection_error';
+
 export const App: React.FC = () => {
+  // Authentication state
+  const [authState, setAuthState] = useState<AuthState>('checking');
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -42,7 +53,42 @@ export const App: React.FC = () => {
   // Background active job notification
   const [backgroundNotification, setBackgroundNotification] = useState<BackgroundNotification | null>(null);
 
-  // Fetch initial data
+  // Authentication session check
+  const checkAuth = useCallback(async () => {
+    setAuthState('checking');
+    setAuthError(null);
+    try {
+      const status = await getAuthStatus();
+      setAuthRequired(status.auth_required);
+      if (!status.auth_required || status.authenticated) {
+        setAuthState('authenticated');
+      } else {
+        setAuthState('unauthenticated');
+      }
+    } catch (err: unknown) {
+      setAuthState('connection_error');
+      setAuthError(err instanceof Error ? err.message : 'Failed to connect to backend server');
+    }
+  }, []);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  // Intercept 401 Unauthorized from protected API calls
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setAuthState('unauthenticated');
+      setProjects([]);
+      setSelectedProjectId(null);
+      setBackgroundNotification(null);
+    });
+    return () => {
+      setUnauthorizedHandler(null);
+    };
+  }, []);
+
+  // Fetch initial data only when authenticated
   const loadProjects = useCallback(async () => {
     try {
       const data = await getProjects();
@@ -69,12 +115,16 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadProjects();
-    loadSystemInfo();
-  }, [loadProjects, loadSystemInfo]);
+    if (authState === 'authenticated') {
+      loadProjects();
+      loadSystemInfo();
+    }
+  }, [authState, loadProjects, loadSystemInfo]);
 
   // Polling for processing projects
   useEffect(() => {
+    if (authState !== 'authenticated') return;
+
     const hasActiveProcessing = projects.some(
       (p) => p.status === 'pending' || p.status === 'processing'
     );
@@ -100,7 +150,20 @@ export const App: React.FC = () => {
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [projects, backgroundNotification]);
+  }, [authState, projects, backgroundNotification]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // ignore network errors on logout
+    } finally {
+      setAuthState('unauthenticated');
+      setProjects([]);
+      setSelectedProjectId(null);
+      setBackgroundNotification(null);
+    }
+  };
 
   // Handlers
   const handleImport = async (file: File, title: string, model: string, signal?: AbortSignal) => {
@@ -112,7 +175,7 @@ export const App: React.FC = () => {
       setBackgroundNotification({
         projectId: res.project_id,
         title: res.title || file.name,
-        whisperModel: model,
+        whisperModel: res.whisper_model || (authRequired ? 'tiny' : model),
       });
     } finally {
       setIsSubmittingImport(false);
@@ -176,12 +239,50 @@ export const App: React.FC = () => {
     setProjectToDelete(p);
   };
 
+  if (authState === 'checking') {
+    return (
+      <div className="login-container" role="status" aria-label="Connecting to server">
+        <Loader2 size={36} className="spin" style={{ color: 'var(--primary)' }} />
+        <span style={{ marginTop: '16px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+          Connecting to Deutsch Shadow...
+        </span>
+      </div>
+    );
+  }
+
+  if (authState === 'connection_error') {
+    return (
+      <div className="login-container" role="alert">
+        <div className="login-card" style={{ textAlign: 'center' }}>
+          <AlertCircle size={44} style={{ color: 'var(--danger)', margin: '0 auto 16px' }} />
+          <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Connection Error</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '20px', lineHeight: 1.5 }}>
+            {authError || 'Could not connect to the backend server. Please verify the service is running.'}
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={checkAuth}
+            style={{ minHeight: 'var(--touch-target-min)', width: '100%', justifyContent: 'center' }}
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (authState === 'unauthenticated') {
+    return <LoginView onLoginSuccess={() => setAuthState('authenticated')} />;
+  }
+
   return (
     <div className="app-container">
       <Navbar
         capabilities={capabilities}
         onOpenImport={() => setIsImportOpen(true)}
         onNavigateHome={() => setSelectedProjectId(null)}
+        authRequired={authRequired}
+        onLogout={handleLogout}
       />
 
       <main className="main-content">
@@ -230,6 +331,7 @@ export const App: React.FC = () => {
             onDeleteProject={(p) => setProjectToDelete(p)}
             onRetryProcess={handleRetryProcess}
             onOpenImport={() => setIsImportOpen(true)}
+            authRequired={authRequired}
           />
         )}
       </main>
@@ -241,6 +343,7 @@ export const App: React.FC = () => {
         isSubmitting={isSubmittingImport}
         onClose={() => setIsImportOpen(false)}
         onSubmit={handleImport}
+        isCloudMode={authRequired}
       />
 
       <DeleteConfirmModal

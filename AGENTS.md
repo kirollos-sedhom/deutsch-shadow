@@ -15,7 +15,7 @@ This document establishes operating rules, architecture principles, and engineer
 6. Record and persist user vocal repetitions locally.
 7. Practice with an Auto-Pause Loop and compare original versus user speech using one-click A/B playback.
 
-**Key Invariant**: The initial MVP runs 100% locally on desktop (Windows, macOS, Linux) without cloud dependencies, user accounts, telemetry, or paid external APIs. The backend is designed as an independent API service to support a future native mobile application.
+**Key Invariant** The desktop version remains fully functional locally on Windows, macOS, and Linux without requiring cloud dependencies, user accounts, telemetry, or paid external APIs. Optional cloud deployment and future native mobile applications may be developed as separate targets without compromising the existing local-first desktop experience.
 
 ---
 
@@ -85,3 +85,56 @@ This document establishes operating rules, architecture principles, and engineer
 5. **Cross-Platform File System Handling**
    - Always use `pathlib.Path` in Python to prevent Windows/Linux path separator bugs.
    - Store relative media paths in SQLite; resolve absolute storage paths via a centralized configuration class.
+
+## 5. Stable Version Protection & Backward Compatibility
+
+**Highest Priority:** The existing Windows version of Deutsch Shadow is a working application. Preserving its functionality and existing user data takes priority over introducing new platforms, deployment targets, or architectural improvements.
+
+### 5.1 Git Branch Protection
+- Treat `main` as the stable, production-quality branch.
+- Never perform experimental development directly on `main`.
+- Create a dedicated feature branch for deployment, Android development, or other substantial changes.
+- Never merge changes into `main` without explicit user approval.
+- Before starting work, inspect `git status`, the current branch, and recent commits.
+- Never discard uncommitted user changes or reset Git history without explicit approval.
+
+### 5.2 User Data Protection
+- Never delete, overwrite, reset, or destructively migrate existing SQLite databases, project directories, imported media, recordings, or transcript edits without explicit approval.
+- Never assume orphaned files or apparently unused data are safe to delete.
+- Before modifying storage architecture or database schemas, inspect the existing implementation and document the migration strategy.
+- All migrations must preserve existing user data and provide a recovery or rollback strategy.
+- Never use production or personal user data as disposable test data.
+
+### 5.3 Backward Compatibility
+- Existing Windows functionality must remain operational throughout future development.
+- New deployment targets (cloud hosting, Android, or other platforms) must be implemented with isolated configurations, modules, or platform-specific implementations wherever practical.
+- Do not replace working Windows components merely because another platform requires different technology.
+- Preserve the existing local-first desktop workflow as an independent supported deployment target.
+- Cloud deployment must be optional and must not introduce a mandatory cloud dependency into the Windows version.
+
+### 5.4 Change Management
+- Before implementation, identify affected components and possible regressions.
+- Prefer small, reversible changes over broad architectural rewrites.
+- Do not introduce paid services, recurring costs, or external dependencies without explicit approval.
+- Do not modify firewall rules, network exposure, authentication settings, or security configurations without explicit approval.
+- If a requirement threatens existing functionality or data integrity, stop and explain the risk before proceeding.
+
+### 5.5 Verification Requirements
+After every significant implementation:
+- Run relevant frontend and backend tests.
+- Run regression tests for existing functionality.
+- Verify production builds and inspect actual command exit codes.
+- Inspect the Git diff for unintended changes.
+- Confirm the existing Windows workflow remains functional.
+- Report failed tests and unresolved risks honestly.
+
+### 5.6 Explicit Approval Required
+The following operations always require explicit user approval:
+- Merging into `main`.
+- Deleting or overwriting existing user data.
+- Destructive database migrations.
+- Replacing major architectural components.
+- Introducing paid infrastructure or recurring subscriptions.
+- Removing or disabling existing Windows functionality.
+
+**Core Principle:** New functionality must never come at the expense of existing working functionality or user data.

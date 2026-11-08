@@ -65,3 +65,4 @@ class ProjectImportResponse(BaseModel):
     title: str
     status: str
     message: str
+    whisper_model: str = "base"

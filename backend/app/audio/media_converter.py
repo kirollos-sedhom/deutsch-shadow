@@ -64,8 +64,15 @@ class MediaConverter:
         out_dir = Path(output_dir).resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Working file strictly for transcription inference
-        working_wav_path = out_dir / "whisper_working.wav"
+        # Working file strictly for transcription inference.
+        # Use a distinct working filename if the input file itself is named whisper_working.wav
+        # or resolves to the same path, preventing FFmpeg same-path exit code 234 collisions.
+        working_filename = "whisper_working.wav"
+        if source_path.name == working_filename or source_path.resolve() == (out_dir / working_filename).resolve():
+            working_filename = "whisper_working_mono16k.wav"
+        if source_path.resolve() == (out_dir / working_filename).resolve():
+            working_filename = "whisper_working_transcription.wav"
+        working_wav_path = out_dir / working_filename
 
         # FFmpeg command: extract audio stream, downmix to mono, resample to 16kHz PCM 16-bit
         cmd = [

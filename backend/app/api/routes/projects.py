@@ -3,6 +3,7 @@
 from __future__ import annotations
 import asyncio
 from typing import List, Optional, Set
+import uuid
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -15,6 +16,8 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.config import settings
+from backend.app.core.security import validate_identifier
 from backend.app.db.session import get_db, AsyncSessionLocal
 from backend.app.db.models import Project
 from backend.app.schemas.project import (
@@ -33,6 +36,8 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 # Distinguishes genuinely active running jobs from stale "processing" database records left by terminated processes.
 _active_pipeline_tasks: Set[str] = set()
 _tasks_lock = asyncio.Lock()
+# Ensure strictly one transcription pipeline runs at a time to respect cloud/low-memory limits
+_pipeline_semaphore = asyncio.Semaphore(1)
 
 
 def is_pipeline_task_active(project_id: str) -> bool:
@@ -50,15 +55,21 @@ def unmark_pipeline_task_active(project_id: str) -> None:
     _active_pipeline_tasks.discard(project_id)
 
 
+def clear_pipeline_tasks() -> None:
+    """Clear all active pipeline task markers (used for testing state reset)."""
+    _active_pipeline_tasks.clear()
+
+
 async def run_pipeline_in_background(project_id: str):
     """Background task to run the audio pipeline for an imported project."""
     try:
-        async with AsyncSessionLocal() as session:
-            try:
-                await ProjectService.process_project_pipeline(session, project_id)
-            except Exception:
-                # Error status is already saved in database by process_project_pipeline
-                pass
+        async with _pipeline_semaphore:
+            async with AsyncSessionLocal() as session:
+                try:
+                    await ProjectService.process_project_pipeline(session, project_id)
+                except Exception:
+                    # Error status is already saved in database by process_project_pipeline
+                    pass
     finally:
         async with _tasks_lock:
             unmark_pipeline_task_active(project_id)
@@ -87,29 +98,57 @@ async def import_project(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
-    whisper_model: Optional[str] = Form("base"),
+    whisper_model: Optional[str] = Form(None),
     auto_process: bool = Form(True),
     session: AsyncSession = Depends(get_db),
 ) -> ProjectImportResponse:
     """Upload media file, store it locally, and start background transcription/segmentation."""
-    project = await ProjectService.import_project(
-        session=session,
-        file=file,
-        title=title,
-        whisper_model=whisper_model,
-    )
-
-    if auto_process:
+    # Concurrency guard in cloud mode: strictly one active pipeline permitted
+    active_token: Optional[str] = None
+    if settings.is_cloud_mode and auto_process:
         async with _tasks_lock:
-            mark_pipeline_task_active(project.id)
-        background_tasks.add_task(run_pipeline_in_background, project.id)
+            if len(_active_pipeline_tasks) > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="A transcription pipeline is already running. Cloud mode permits only one active job.",
+                )
+            active_token = f"reservation:{uuid.uuid4()}"
+            mark_pipeline_task_active(active_token)
 
-    return ProjectImportResponse(
-        project_id=project.id,
-        title=project.title,
-        status=project.status,
-        message="Project media imported successfully. Pipeline processing initiated.",
-    )
+    try:
+        project = await ProjectService.import_project(
+            session=session,
+            file=file,
+            title=title,
+            whisper_model=whisper_model,
+        )
+
+        if auto_process:
+            async with _tasks_lock:
+                if active_token:
+                    unmark_pipeline_task_active(active_token)
+                active_token = project.id
+                mark_pipeline_task_active(active_token)
+
+            background_tasks.add_task(run_pipeline_in_background, project.id)
+            # Successfully scheduled! Hand off lifetime ownership to run_pipeline_in_background
+            active_token = None
+
+        model_str = getattr(project, "whisper_model", None)
+        if not isinstance(model_str, str):
+            model_str = "tiny" if settings.is_cloud_mode else settings.default_whisper_model
+
+        return ProjectImportResponse(
+            project_id=project.id,
+            title=project.title,
+            status=project.status,
+            message="Project media imported successfully. Pipeline processing initiated.",
+            whisper_model=model_str,
+        )
+    finally:
+        if active_token:
+            async with _tasks_lock:
+                unmark_pipeline_task_active(active_token)
 
 
 @router.get(
@@ -138,6 +177,7 @@ async def process_project(
     session: AsyncSession = Depends(get_db),
 ) -> ProjectDetail:
     """Trigger background audio processing/retry pipeline and return current project detail promptly."""
+    project_id = validate_identifier(project_id, "project_id")
     project = await session.get(Project, project_id)
     if not project:
         raise HTTPException(
@@ -145,23 +185,36 @@ async def process_project(
             detail=f"Project '{project_id}' not found",
         )
 
+    task_scheduled = False
     async with _tasks_lock:
-        # Duplicate job protection: only block if a task is genuinely active in the current process
-        if is_pipeline_task_active(project_id):
-            return await ProjectService.get_project_detail(session, project_id)
+        if settings.is_cloud_mode:
+            # Cloud mode: strictly one active pipeline permitted; immediate 429 rejection
+            if len(_active_pipeline_tasks) > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="A transcription pipeline is already running. Cloud mode permits only one active job.",
+                )
+        else:
+            # Duplicate job protection: only block if a task is genuinely active in the current process
+            if is_pipeline_task_active(project_id):
+                return await ProjectService.get_project_detail(session, project_id)
 
         # Register active in-memory task BEFORE queuing to protect against immediate duplicate requests
         mark_pipeline_task_active(project_id)
 
-    # Set status to processing and clear previous error (recovering stale processing or failed state)
-    project.status = "processing"
-    project.error_message = None
-    await session.commit()
-
-    # Queue pipeline execution in background
-    background_tasks.add_task(run_pipeline_in_background, project.id)
-
-    return await ProjectService.get_project_detail(session, project_id)
+    try:
+        # Set status to processing and clear previous error (recovering stale processing or failed state)
+        project.status = "processing"
+        project.error_message = None
+        await session.commit()
+        # Queue pipeline execution in background
+        background_tasks.add_task(run_pipeline_in_background, project.id)
+        task_scheduled = True
+        return await ProjectService.get_project_detail(session, project.id)
+    finally:
+        if not task_scheduled:
+            async with _tasks_lock:
+                unmark_pipeline_task_active(project_id)
 
 
 @router.delete(

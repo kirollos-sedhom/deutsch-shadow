@@ -64,7 +64,10 @@ class MediaProbe:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=30.0,
             )
+        except subprocess.TimeoutExpired as exc:
+            raise MediaProbeError(f"ffprobe timed out after 30 seconds: {exc}") from exc
         except Exception as exc:
             raise MediaProbeError(f"Failed to execute ffprobe: {exc}") from exc
 

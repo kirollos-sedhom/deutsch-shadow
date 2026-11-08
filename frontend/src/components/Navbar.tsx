@@ -1,17 +1,21 @@
 import React from 'react';
-import { Volume2, Plus, ExternalLink, Cpu } from 'lucide-react';
+import { Volume2, Plus, ExternalLink, Cpu, LogOut } from 'lucide-react';
 import { SystemCapabilities } from '../api/client';
 
 interface NavbarProps {
   capabilities: SystemCapabilities | null;
   onOpenImport: () => void;
   onNavigateHome: () => void;
+  authRequired?: boolean;
+  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   capabilities,
   onOpenImport,
   onNavigateHome,
+  authRequired = false,
+  onLogout,
 }) => {
   return (
     <header className="navbar">
@@ -28,7 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Volume2 size={20} style={{ color: 'var(--primary)' }} />
           <span>Deutsch Shadow</span>
-          <span className="brand-badge">Local</span>
+          <span className="brand-badge">{authRequired ? 'Cloud' : 'Local'}</span>
         </div>
 
         <button
@@ -55,16 +59,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
 
-        <a
-          href="http://127.0.0.1:8080"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn-secondary btn-sm"
-          title="Open Milestone 3 Debugging Player on port 8080"
-        >
-          <span>M3 Player</span>
-          <ExternalLink size={12} />
-        </a>
+        {!authRequired && (
+          <a
+            href="http://127.0.0.1:8080"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-secondary btn-sm"
+            title="Open Milestone 3 Debugging Player on port 8080"
+          >
+            <span>M3 Player</span>
+            <ExternalLink size={12} />
+          </a>
+        )}
+
+        {authRequired && onLogout && (
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={onLogout}
+            title="Log out of cloud session"
+            aria-label="Log Out"
+          >
+            <LogOut size={13} />
+            <span>Logout</span>
+          </button>
+        )}
       </div>
     </header>
   );

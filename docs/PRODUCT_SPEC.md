@@ -162,3 +162,28 @@ The following items are deferred to post-MVP iterations:
 - Mobile application builds (iOS / Android packages).
 - Video playback sync (video is ingested, but only audio is shadowed in MVP).
 - Anki / SRS flashcard export integrations.
+
+---
+
+## 7. Cloud Demo Limitations & Deployment Notice
+
+An optional zero-cost cloud demonstration target is provided to allow previewing Deutsch Shadow in the browser without local environment setup. When running on free-tier cloud hosting (e.g., Render free web service), the following operational constraints apply:
+
+1. **Temporary Ephemeral Storage:**
+   - The cloud demo runs on an ephemeral container filesystem.
+   - Uploaded media files, generated transcripts, customized segment boundaries, and practice vocal recordings are stored temporarily in `/app/data`.
+   - Data may be lost whenever the hosting service spins down due to inactivity, restarts, or is redeployed.
+   - The demo is not suitable for permanent storage, long-term learning records, or archiving user recordings. Keep original media files and important recordings stored safely elsewhere.
+
+2. **Inactivity Spin-Down & Cold Starts:**
+   - Free cloud instances automatically spin down after a period of inactivity (e.g., 15 minutes of idle time on Render).
+   - Cold-start requests after a spin-down may require 30–60 seconds while the container initializes and boots Uvicorn.
+
+3. **Constrained Resource Profile:**
+   - Speech recognition is strictly constrained to the lightweight `tiny` Whisper model with 1 CPU thread and `int8` quantization to ensure reliable execution within the 512 MB memory boundary.
+   - Audio imports are capped at 25 MiB payload size and 180 seconds maximum duration.
+   - Transcription concurrency is strictly limited to one active pipeline at a time; concurrent import attempts receive HTTP 429.
+
+4. **Local Desktop Version as Authoritative Platform:**
+   - The native desktop version (Windows, macOS, Linux) remains the authoritative and recommended deployment for persistent personal language learning.
+   - The local desktop version provides permanent SQLite and filesystem storage, complete offline privacy, full Whisper model tier selection (`tiny`, `base`, `small`, `medium`), and zero upload or duration restrictions.

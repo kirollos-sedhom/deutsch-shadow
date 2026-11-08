@@ -10,6 +10,7 @@ import {
   Plus,
   Loader2,
   AlertCircle,
+  AlertTriangle,
   Play,
 } from 'lucide-react';
 import { ProjectSummary } from '../api/client';
@@ -22,6 +23,7 @@ interface ProjectListProps {
   onDeleteProject: (project: ProjectSummary) => void;
   onRetryProcess: (projectId: string) => void;
   onOpenImport: () => void;
+  authRequired?: boolean;
 }
 
 export const ProjectList: React.FC<ProjectListProps> = ({
@@ -31,29 +33,60 @@ export const ProjectList: React.FC<ProjectListProps> = ({
   onDeleteProject,
   onRetryProcess,
   onOpenImport,
+  authRequired = false,
 }) => {
+  const renderCloudWarning = () => {
+    if (!authRequired) return null;
+    return (
+      <div
+        className="alert-banner alert-warning cloud-storage-warning"
+        role="status"
+        style={{ marginBottom: '16px' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px', color: '#eab308' }} />
+          <span style={{ fontSize: '13px', lineHeight: 1.45 }}>
+            <strong>Cloud Demo:</strong> Storage is temporary. Your uploaded media, transcripts,
+            recordings, and edits may be lost when the service spins down, restarts, or is
+            redeployed. Keep your original files and recordings somewhere safe.
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   if (isLoading && projects.length === 0) {
     return (
-      <div className="empty-state">
-        <Loader2 size={32} className="spin empty-state-icon" style={{ color: 'var(--primary)' }} />
-        <h3 className="empty-state-title">Loading Library...</h3>
-        <p className="empty-state-desc">Retrieving projects from local database</p>
+      <div>
+        {renderCloudWarning()}
+        <div className="empty-state">
+          <Loader2 size={32} className="spin empty-state-icon" style={{ color: 'var(--primary)' }} />
+          <h3 className="empty-state-title">Loading Library...</h3>
+          <p className="empty-state-desc">
+            {authRequired
+              ? 'Retrieving projects from cloud database'
+              : 'Retrieving projects from local database'}
+          </p>
+        </div>
       </div>
     );
   }
 
   if (projects.length === 0) {
     return (
-      <div className="empty-state">
-        <FolderOpen size={40} className="empty-state-icon" />
-        <h3 className="empty-state-title">No Media Imported</h3>
-        <p className="empty-state-desc">
-          Your shadowing library is empty. Import a German audio or video file to generate practice clips.
-        </p>
-        <button className="btn btn-primary" onClick={onOpenImport}>
-          <Plus size={16} />
-          <span>Import First File</span>
-        </button>
+      <div>
+        {renderCloudWarning()}
+        <div className="empty-state">
+          <FolderOpen size={40} className="empty-state-icon" />
+          <h3 className="empty-state-title">No Media Imported</h3>
+          <p className="empty-state-desc">
+            Your shadowing library is empty. Import a German audio or video file to generate practice clips.
+          </p>
+          <button className="btn btn-primary" onClick={onOpenImport}>
+            <Plus size={16} />
+            <span>Import First File</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -94,11 +127,14 @@ export const ProjectList: React.FC<ProjectListProps> = ({
 
   return (
     <div>
+      {renderCloudWarning()}
       <div className="section-header">
         <div>
           <h2 className="section-title">Media Library</h2>
           <p className="section-subtitle">
-            {projects.length} project{projects.length === 1 ? '' : 's'} stored locally
+            {authRequired
+              ? `${projects.length} project${projects.length === 1 ? '' : 's'} in temporary cloud session`
+              : `${projects.length} project${projects.length === 1 ? '' : 's'} stored locally`}
           </p>
         </div>
         <button className="btn btn-primary" onClick={onOpenImport}>

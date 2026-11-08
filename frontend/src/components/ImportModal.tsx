@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Upload, X, FileAudio, FileVideo, AlertCircle, Loader2 } from 'lucide-react';
 import { WhisperModelTier } from '../api/client';
 
@@ -9,6 +9,7 @@ interface ImportModalProps {
   isSubmitting: boolean;
   onClose: () => void;
   onSubmit: (file: File, title: string, model: string, signal?: AbortSignal) => Promise<void>;
+  isCloudMode?: boolean;
 }
 
 const SUPPORTED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.mp4', '.aac', '.ogg', '.flac', '.webm', '.mkv'];
@@ -20,14 +21,25 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   isSubmitting,
   onClose,
   onSubmit,
+  isCloudMode = false,
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [customTitle, setCustomTitle] = useState('');
-  const [selectedModel, setSelectedModel] = useState<string>(recommendedModel || 'base');
+  const [selectedModel, setSelectedModel] = useState<string>(
+    isCloudMode ? 'tiny' : recommendedModel || 'base'
+  );
   const [isDragging, setIsDragging] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (isCloudMode) {
+      setSelectedModel('tiny');
+    } else if (recommendedModel) {
+      setSelectedModel(recommendedModel);
+    }
+  }, [isCloudMode, recommendedModel]);
 
   if (!isOpen) return null;
 
@@ -200,7 +212,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 className="form-select"
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isCloudMode}
               >
                 {models.length > 0 ? (
                   models.map((m) => (
@@ -208,6 +220,8 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                       {m.name.toUpperCase()} ({m.size_mb} MB) {m.name === recommendedModel ? '— Recommended' : ''}
                     </option>
                   ))
+                ) : isCloudMode ? (
+                  <option value="tiny">TINY (75 MB) — Recommended</option>
                 ) : (
                   <>
                     <option value="tiny">TINY (75 MB)</option>
@@ -218,7 +232,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 )}
               </select>
               <div className="form-hint">
-                Inference runs locally using faster-whisper with int8 CPU quantization.
+                {isCloudMode
+                  ? 'Inference runs on the cloud server using faster-whisper (tiny) with int8 CPU quantization.'
+                  : 'Inference runs locally using faster-whisper with int8 CPU quantization.'}
               </div>
             </div>
           </div>

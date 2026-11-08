@@ -45,6 +45,7 @@ export interface ProjectImportResponse {
   title: string;
   status: string;
   message: string;
+  whisper_model?: string;
 }
 
 export interface SegmentRead {
@@ -92,7 +93,59 @@ export interface WhisperModelTier {
   is_recommended: boolean;
 }
 
+export interface AuthStatusResponse {
+  auth_required: boolean;
+  authenticated: boolean;
+}
+
+export interface AuthActionResponse {
+  success: boolean;
+  message: string;
+}
+
 const BASE_URL = '/api';
+
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler;
+}
+
+export function getUnauthorizedHandler(): UnauthorizedHandler | null {
+  return unauthorizedHandler;
+}
+
+export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const method = (init?.method || 'GET').toUpperCase();
+  const headers = new Headers(init?.headers);
+
+  // Attach X-Requested-With: Fetch on state-changing methods for CSRF protection
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    if (!headers.has('X-Requested-With')) {
+      headers.set('X-Requested-With', 'Fetch');
+    }
+  }
+
+  const response = await fetch(input, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
+
+  // Intercept 401 Unauthorized for protected endpoints
+  if (
+    response.status === 401 &&
+    !input.endsWith('/auth/login') &&
+    !input.endsWith('/auth/status')
+  ) {
+    if (unauthorizedHandler) {
+      unauthorizedHandler();
+    }
+  }
+
+  return response;
+}
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -115,13 +168,36 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json();
 }
 
+export async function getAuthStatus(): Promise<AuthStatusResponse> {
+  const res = await apiFetch(`${BASE_URL}/auth/status`);
+  return handleResponse<AuthStatusResponse>(res);
+}
+
+export async function login(password: string): Promise<AuthActionResponse> {
+  const res = await apiFetch(`${BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ password }),
+  });
+  return handleResponse<AuthActionResponse>(res);
+}
+
+export async function logout(): Promise<AuthActionResponse> {
+  const res = await apiFetch(`${BASE_URL}/auth/logout`, {
+    method: 'POST',
+  });
+  return handleResponse<AuthActionResponse>(res);
+}
+
 export async function getProjects(): Promise<ProjectSummary[]> {
-  const res = await fetch(`${BASE_URL}/projects`);
+  const res = await apiFetch(`${BASE_URL}/projects`);
   return handleResponse<ProjectSummary[]>(res);
 }
 
 export async function getProject(id: string): Promise<ProjectDetail> {
-  const res = await fetch(`${BASE_URL}/projects/${encodeURIComponent(id)}`);
+  const res = await apiFetch(`${BASE_URL}/projects/${encodeURIComponent(id)}`);
   return handleResponse<ProjectDetail>(res);
 }
 
@@ -139,7 +215,7 @@ export async function importProject(
   formData.append('whisper_model', whisperModel);
   formData.append('auto_process', 'true');
 
-  const res = await fetch(`${BASE_URL}/projects/import`, {
+  const res = await apiFetch(`${BASE_URL}/projects/import`, {
     method: 'POST',
     body: formData,
     signal,
@@ -148,31 +224,31 @@ export async function importProject(
 }
 
 export async function processProject(id: string): Promise<ProjectDetail> {
-  const res = await fetch(`${BASE_URL}/projects/${encodeURIComponent(id)}/process`, {
+  const res = await apiFetch(`${BASE_URL}/projects/${encodeURIComponent(id)}/process`, {
     method: 'POST',
   });
   return handleResponse<ProjectDetail>(res);
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/projects/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`${BASE_URL}/projects/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
   await handleResponse<void>(res);
 }
 
 export async function getProjectSegments(id: string): Promise<SegmentRead[]> {
-  const res = await fetch(`${BASE_URL}/projects/${encodeURIComponent(id)}/segments`);
+  const res = await apiFetch(`${BASE_URL}/projects/${encodeURIComponent(id)}/segments`);
   return handleResponse<SegmentRead[]>(res);
 }
 
 export async function getSystemCapabilities(): Promise<SystemCapabilities> {
-  const res = await fetch(`${BASE_URL}/system/capabilities`);
+  const res = await apiFetch(`${BASE_URL}/system/capabilities`);
   return handleResponse<SystemCapabilities>(res);
 }
 
 export async function getWhisperModels(): Promise<WhisperModelTier[]> {
-  const res = await fetch(`${BASE_URL}/system/models`);
+  const res = await apiFetch(`${BASE_URL}/system/models`);
   return handleResponse<WhisperModelTier[]>(res);
 }
 
@@ -190,7 +266,7 @@ export async function updateSegment(
   segmentId: string,
   payload: SegmentUpdatePayload
 ): Promise<SegmentRead> {
-  const res = await fetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}`, {
+  const res = await apiFetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -205,7 +281,7 @@ export function getRecordingAudioUrl(recordingId: string): string {
 }
 
 export async function getRecordings(segmentId: string): Promise<RecordingRead[]> {
-  const res = await fetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}/recordings`);
+  const res = await apiFetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}/recordings`);
   return handleResponse<RecordingRead[]>(res);
 }
 
@@ -237,7 +313,7 @@ export async function uploadRecording(
     formData.append('duration_ms', Math.round(durationMs).toString());
   }
 
-  const res = await fetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}/recordings`, {
+  const res = await apiFetch(`${BASE_URL}/segments/${encodeURIComponent(segmentId)}/recordings`, {
     method: 'POST',
     body: formData,
     signal,
@@ -246,14 +322,14 @@ export async function uploadRecording(
 }
 
 export async function setActiveTake(recordingId: string): Promise<RecordingRead> {
-  const res = await fetch(`${BASE_URL}/recordings/${encodeURIComponent(recordingId)}/active`, {
+  const res = await apiFetch(`${BASE_URL}/recordings/${encodeURIComponent(recordingId)}/active`, {
     method: 'PATCH',
   });
   return handleResponse<RecordingRead>(res);
 }
 
 export async function deleteRecording(recordingId: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/recordings/${encodeURIComponent(recordingId)}`, {
+  const res = await apiFetch(`${BASE_URL}/recordings/${encodeURIComponent(recordingId)}`, {
     method: 'DELETE',
   });
   await handleResponse<void>(res);

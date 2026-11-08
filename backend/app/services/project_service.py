@@ -11,9 +11,16 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.audio.exceptions import (
+    FFmpegNotFoundError,
+    MediaProbeError,
+    UnsupportedMediaError,
+)
+from backend.app.audio.media_probe import MediaProbe
 from backend.app.audio.models import SegmentationConfig, WhisperConfig
 from backend.app.audio.pipeline import AudioPipeline
 from backend.app.core.config import settings
+from backend.app.core.security import validate_identifier
 from backend.app.db.models import Project, ProjectSettings, Segment
 from backend.app.schemas.project import ProjectDetail, ProjectSummary
 
@@ -56,12 +63,34 @@ class ProjectService:
         media_type = "video" if ext in VIDEO_EXTENSIONS else "audio"
         chosen_title = title.strip() if title and title.strip() else Path(original_name).stem
 
+        # Validate and enforce Whisper model selection
+        if settings.is_cloud_mode:
+            if whisper_model is None or not whisper_model.strip():
+                chosen_model = "tiny"
+            else:
+                cleaned_model = whisper_model.strip().lower()
+                if cleaned_model != "tiny":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Unsupported Whisper model '{whisper_model}' in cloud mode. "
+                            f"Cloud mode strictly enforces the 'tiny' model."
+                        ),
+                    )
+                chosen_model = "tiny"
+        else:
+            chosen_model = (
+                whisper_model.strip()
+                if whisper_model and whisper_model.strip()
+                else settings.default_whisper_model
+            )
+
         # Create Project record
         project = Project(
             title=chosen_title,
             original_filename=original_name,
             media_type=media_type,
-            whisper_model=whisper_model or settings.default_whisper_model,
+            whisper_model=chosen_model,
             status="pending",
         )
         session.add(project)
@@ -71,27 +100,74 @@ class ProjectService:
         project_dir = settings.get_project_dir(project.id)
         project_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save uploaded file
+        persisted = False
         target_path = project_dir / safe_name
         try:
-            with open(target_path, "wb") as f:
-                while chunk := await file.read(1024 * 64):
-                    f.write(chunk)
-        except OSError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to save uploaded file: {exc}",
-            )
+            # Save uploaded file
+            try:
+                with open(target_path, "wb") as f:
+                    while chunk := await file.read(1024 * 64):
+                        f.write(chunk)
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to save uploaded file: {exc}",
+                )
 
-        project.source_file_path = settings.to_relative_path(target_path)
+            # Cloud-only media duration validation (must not exceed 180 seconds)
+            if settings.is_cloud_mode:
+                try:
+                    probe = MediaProbe()
+                    meta = probe.probe(target_path)
+                except UnsupportedMediaError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Uploaded file does not contain valid audio streams: {exc}",
+                    ) from exc
+                except (MediaProbeError, FileNotFoundError) as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid, corrupted, or unreadable media file: {exc}",
+                    ) from exc
+                except FFmpegNotFoundError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Media validation failed: ffprobe executable not found on system PATH",
+                    ) from exc
 
-        # Initialize default project settings
-        project_settings = ProjectSettings(project_id=project.id)
-        session.add(project_settings)
+                if meta.duration_s is None or meta.duration_s <= 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Unable to determine valid audio duration from uploaded media file",
+                    )
 
-        await session.commit()
-        await session.refresh(project)
-        return project
+                if meta.duration_s > settings.cloud_max_duration_seconds:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Media duration ({meta.duration_s:.1f}s) exceeds cloud limit of "
+                            f"{int(settings.cloud_max_duration_seconds)} seconds."
+                        ),
+                    )
+
+                project.duration_seconds = float(meta.duration_s)
+
+            project.source_file_path = settings.to_relative_path(target_path)
+
+            # Initialize default project settings
+            project_settings = ProjectSettings(project_id=project.id)
+            session.add(project_settings)
+
+            await session.commit()
+            await session.refresh(project)
+            persisted = True
+            return project
+        finally:
+            if not persisted:
+                if target_path.exists():
+                    target_path.unlink()
+                if project_dir.exists():
+                    shutil.rmtree(project_dir, ignore_errors=True)
 
     @classmethod
     async def process_project_pipeline(
@@ -101,6 +177,7 @@ class ProjectService:
         pipeline: Optional[AudioPipeline] = None,
     ) -> Project:
         """Run the audio processing pipeline and populate practice segments in SQLite."""
+        project_id = validate_identifier(project_id, "project_id")
         project = await session.get(Project, project_id)
         if not project:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -113,8 +190,9 @@ class ProjectService:
 
         try:
             if pipeline is None:
+                model_name = "tiny" if settings.is_cloud_mode else project.whisper_model
                 whisper_cfg = WhisperConfig(
-                    model_size=project.whisper_model,
+                    model_size=model_name,
                     device="cpu",
                     compute_type=settings.default_compute_type,
                     cpu_threads=settings.default_cpu_threads,
@@ -208,6 +286,7 @@ class ProjectService:
         cls, session: AsyncSession, project_id: str
     ) -> ProjectDetail:
         """Retrieve full project detail with settings and segment count."""
+        project_id = validate_identifier(project_id, "project_id")
         stmt = (
             select(
                 Project,
@@ -245,6 +324,9 @@ class ProjectService:
     @classmethod
     async def delete_project(cls, session: AsyncSession, project_id: str) -> None:
         """Cascade delete project from SQLite and erase its folder on disk."""
+        project_dir = settings.get_project_dir(project_id)
+        projects_root = settings.projects_dir.resolve()
+
         project = await session.get(Project, project_id)
         if not project:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -253,7 +335,6 @@ class ProjectService:
         await session.delete(project)
         await session.commit()
 
-        # Delete filesystem directory
-        project_dir = settings.get_project_dir(project_id)
-        if project_dir.is_dir():
+        # Delete filesystem directory (never allowed to match projects root)
+        if project_dir.is_dir() and project_dir != projects_root and project_dir.is_relative_to(projects_root):
             shutil.rmtree(project_dir, ignore_errors=True)

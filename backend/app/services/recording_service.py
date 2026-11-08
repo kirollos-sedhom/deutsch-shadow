@@ -20,6 +20,7 @@ from backend.app.audio.exceptions import (
 )
 from backend.app.audio.media_probe import MediaProbe
 from backend.app.core.config import settings
+from backend.app.core.security import validate_identifier
 from backend.app.db.models import Recording, Segment
 from backend.app.schemas.segment import RecordingRead
 
@@ -92,6 +93,7 @@ class RecordingService:
         client_duration_ms: Optional[int] = None,
     ) -> RecordingRead:
         """Validate and persist an uploaded audio take for a given segment."""
+        segment_id = validate_identifier(segment_id, "segment_id")
         # 1. Verify parent segment exists
         segment = await session.get(Segment, segment_id)
         if not segment:
@@ -227,6 +229,7 @@ class RecordingService:
         cls, session: AsyncSession, segment_id: str
     ) -> List[RecordingRead]:
         """Retrieve all recorded takes for a segment ordered by take_number ascending."""
+        segment_id = validate_identifier(segment_id, "segment_id")
         segment = await session.get(Segment, segment_id)
         if not segment:
             raise HTTPException(
@@ -247,6 +250,7 @@ class RecordingService:
         cls, session: AsyncSession, recording_id: str
     ) -> Path:
         """Resolve, validate, and return the physical audio file path for a recording."""
+        recording_id = validate_identifier(recording_id, "recording_id")
         recording = await session.get(Recording, recording_id)
         if not recording:
             raise HTTPException(
@@ -277,6 +281,7 @@ class RecordingService:
         cls, session: AsyncSession, recording_id: str
     ) -> RecordingRead:
         """Designate a specific take as the active take for its segment, deactivating others."""
+        recording_id = validate_identifier(recording_id, "recording_id")
         recording = await session.get(Recording, recording_id)
         if not recording:
             raise HTTPException(
@@ -305,6 +310,7 @@ class RecordingService:
         If the deleted take was active, designates the most recent remaining take (highest take_number)
         as active; if no takes remain, leaves no active take.
         """
+        recording_id = validate_identifier(recording_id, "recording_id")
         recording = await session.get(Recording, recording_id)
         if not recording:
             raise HTTPException(

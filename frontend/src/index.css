@@ -904,6 +904,12 @@ a:hover {
   color: var(--primary);
 }
 
+.alert-warning {
+  background-color: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  color: #fef08a;
+}
+
 .spin {
   animation: spin 1s linear infinite;
 }
@@ -2291,4 +2297,54 @@ a:hover {
   margin-top: 4px;
 }
 
+/* Authentication View */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: var(--bg-base);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background-color: var(--primary-subtle);
+  color: var(--primary);
+  margin-bottom: 12px;
+}
+
+.login-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 6px 0;
+}
+
+.login-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
 

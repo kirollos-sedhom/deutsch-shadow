@@ -1,0 +1,13 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+frontend/node_modules
+frontend/dist
+data/
+*.log
+real_audio_test/

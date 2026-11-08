@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from backend.app.core.config import settings
 from backend.app.schemas.system import SystemCapabilities, WhisperModelTier
 
 
@@ -88,9 +89,12 @@ def get_system_capabilities() -> SystemCapabilities:
     ffmpeg_ok, ffmpeg_path, ffmpeg_ver = get_ffmpeg_info()
 
     # Model recommendation logic:
+    # - In cloud mode: strictly 'tiny' to comply with 512 MB memory envelope
     # - If CUDA available or >= 8 CPU cores and >= 16 GB RAM -> 'small' (recommended for German)
     # - If <= 6 CPU cores or < 16 GB RAM -> 'base' (safe CPU inference)
-    if cuda_avail or (logical_cores >= 8 and ram_gb >= 15.0):
+    if settings.is_cloud_mode:
+        recommended = "tiny"
+    elif cuda_avail or (logical_cores >= 8 and ram_gb >= 15.0):
         recommended = "small"
     else:
         recommended = "base"
@@ -110,6 +114,17 @@ def get_system_capabilities() -> SystemCapabilities:
 
 def get_model_tiers() -> List[WhisperModelTier]:
     """Return available faster-whisper model tiers with size and local download status."""
+    if settings.is_cloud_mode:
+        return [
+            WhisperModelTier(
+                name="tiny",
+                size_mb=75.0,
+                description="Ultra-fast, lightweight model pre-cached for cloud deployment within 512 MB memory limit.",
+                is_downloaded=True,
+                is_recommended=True,
+            )
+        ]
+
     caps = get_system_capabilities()
     models = [
         WhisperModelTier(

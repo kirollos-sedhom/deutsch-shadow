@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.db.models import Project, Recording, Segment
+from backend.app.core.security import validate_identifier
 from backend.app.schemas.segment import (
     SegmentMergeResponse,
     SegmentRead,
@@ -27,6 +28,7 @@ class SegmentService:
         cls, session: AsyncSession, project_id: str
     ) -> List[SegmentRead]:
         """Fetch all segments for a project ordered by sequence_index."""
+        project_id = validate_identifier(project_id, "project_id")
         stmt = (
             select(
                 Segment,
@@ -63,6 +65,7 @@ class SegmentService:
         cls, session: AsyncSession, segment_id: str, payload: SegmentUpdate
     ) -> SegmentRead:
         """Update segment text or boundaries while preserving consistency."""
+        segment_id = validate_identifier(segment_id, "segment_id")
         segment = await session.get(Segment, segment_id)
         if not segment:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Segment not found")
@@ -188,6 +191,7 @@ class SegmentService:
         second_text: Optional[str] = None,
     ) -> SegmentSplitResponse:
         """Split a segment into two contiguous segments at split_time_ms."""
+        segment_id = validate_identifier(segment_id, "segment_id")
         seg = await session.get(Segment, segment_id)
         if not seg:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Segment not found")
@@ -289,6 +293,7 @@ class SegmentService:
         cls, session: AsyncSession, segment_id: str, direction: str
     ) -> SegmentMergeResponse:
         """Merge a segment with its neighboring segment ('next' or 'previous')."""
+        segment_id = validate_identifier(segment_id, "segment_id")
         seg = await session.get(Segment, segment_id)
         if not seg:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Segment not found")

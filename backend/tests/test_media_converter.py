@@ -46,6 +46,34 @@ class TestMediaConverter(unittest.TestCase):
         self.assertEqual(source_wav.stat().st_size, original_size)
         self.assertEqual(source_wav.stat().st_mtime, original_mtime)
 
+    def test_prepare_working_audio_handles_input_named_whisper_working_wav(self):
+        """Conversion must handle source files named whisper_working.wav without colliding or modifying original."""
+        # Place source directly in the output directory to test the exact in-place collision scenario
+        target_dir = Path(self.temp_dir.name) / "project_folder"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        source_wav = target_dir / "whisper_working.wav"
+        create_synthetic_wav(source_wav, duration_s=1.0, sample_rate=44100, num_channels=2)
+
+        original_size = source_wav.stat().st_size
+        original_mtime = source_wav.stat().st_mtime
+
+        meta, working_wav = self.converter.prepare_working_audio(source_wav, target_dir)
+
+        # 1. Output file exists, is valid, and is distinct from the original source file
+        self.assertTrue(working_wav.is_file())
+        self.assertNotEqual(working_wav.resolve(), source_wav.resolve())
+
+        # 2. Probe converted file to verify 16000Hz and 1 channel (mono)
+        working_meta = self.probe.probe(working_wav)
+        working_audio = working_meta.primary_audio
+        self.assertIsNotNone(working_audio)
+        self.assertEqual(working_audio.sample_rate, 16000)
+        self.assertEqual(working_audio.channels, 1)
+
+        # 3. Original source file remains completely unmodified
+        self.assertEqual(source_wav.stat().st_size, original_size)
+        self.assertEqual(source_wav.stat().st_mtime, original_mtime)
+
 
 if __name__ == "__main__":
     unittest.main()

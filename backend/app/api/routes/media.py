@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
+from backend.app.core.security import validate_identifier
 from backend.app.db.models import Project
 from backend.app.db.session import get_db
 from backend.app.services.media_service import create_range_streaming_response
@@ -23,6 +24,7 @@ async def stream_project_master_audio(
     session: AsyncSession = Depends(get_db),
 ):
     """Serve the master audio file for a project using standard byte-range responses (HTTP 206)."""
+    project_id = validate_identifier(project_id, "project_id")
     project = await session.get(Project, project_id)
     if not project:
         raise HTTPException(
